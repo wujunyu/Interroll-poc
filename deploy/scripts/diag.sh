@@ -8,7 +8,8 @@ OUT="$ROOT/dist"
 TS="$(date +%Y%m%d-%H%M%S)"
 WORK="$(mktemp -d)"
 PKG="$WORK/interroll-diag-$TS"
-COMPOSE="docker compose --env-file $ROOT/.env -f $ROOT/deploy/compose/compose.yaml"
+ENGINE="${ENGINE:-docker}"
+COMPOSE="$ENGINE compose --env-file $ROOT/.env -f $ROOT/deploy/compose/compose.yaml"
 
 mkdir -p "$PKG"/{logs,config} "$OUT"
 
@@ -36,12 +37,12 @@ for svc in mqtt db ingest api web; do
 done
 
 echo "[diag] 抓 MQTT 尾巴（10 条，3 秒超时）"
-timeout 5 docker run --rm --network host eclipse-mosquitto:2 \
+timeout 5 $ENGINE run --rm --network host eclipse-mosquitto:2 \
   mosquitto_sub -h 127.0.0.1 -p "${MQTT_PORT:-1884}" -t 'line/#' -C 10 -W 3 -v 2>/dev/null \
   > "$PKG/mqtt-tail.ndjson" || echo "(没有收到消息)" > "$PKG/mqtt-tail.ndjson"
 
 echo "[diag] 收集库统计"
-docker exec -i -e PGPASSWORD="$(grep -E '^DB_PASSWORD=' "$ROOT/.env" | cut -d= -f2)" \
+$ENGINE exec -i -e PGPASSWORD="$(grep -E '^DB_PASSWORD=' "$ROOT/.env" | cut -d= -f2)" \
   interroll-poc-db-1 psql -U "$(grep -E '^DB_USER=' "$ROOT/.env" | cut -d= -f2)" \
   -d "$(grep -E '^DB_NAME=' "$ROOT/.env" | cut -d= -f2)" <<'SQL' > "$PKG/db-stats.txt" 2>&1 || echo "库不可达" > "$PKG/db-stats.txt"
 \pset pager off

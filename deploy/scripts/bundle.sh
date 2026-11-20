@@ -14,7 +14,7 @@ OUT="$ROOT/dist"
 WORK="$(mktemp -d)"
 DIR="$WORK/interroll-poc-$TAG"
 
-mkdir -p "$DIR"/{compose,scripts,runbook} "$OUT"
+mkdir -p "$DIR"/{deploy/compose,deploy/db,deploy/scripts,runbook} "$OUT"
 
 echo "[bundle] 版本 $TAG"
 IMAGES=(
@@ -47,13 +47,14 @@ else
   docker save -o "$DIR/images.tar" "${IMAGES[@]}"
 fi
 
-echo "[bundle] 收编排与脚本"
-cp "$ROOT/deploy/compose/compose.yaml" "$DIR/compose/"
+echo "[bundle] 收编排与脚本（目录结构对齐仓库，脚本里的相对路径才成立）"
+cp "$ROOT/deploy/compose/compose.yaml" "$ROOT/deploy/compose/mosquitto.conf" "$DIR/deploy/compose/"
+cp "$ROOT/deploy/db/init.sql" "$DIR/deploy/db/"
 cp "$ROOT/.env.example" "$DIR/.env.example"
-cp "$ROOT/deploy/scripts/rollback.sh" "$ROOT/deploy/scripts/diag.sh" "$DIR/scripts/"
+cp "$ROOT/deploy/scripts/rollback.sh" "$ROOT/deploy/scripts/diag.sh" "$DIR/deploy/scripts/"
 
 # podman 给本地镜像加的 localhost/ 前缀，load 之后必须摘掉，否则 compose 的 image: 名字对不上
-cat > "$DIR/scripts/load.sh" <<LOAD
+cat > "$DIR/deploy/scripts/load.sh" <<LOAD
 #!/usr/bin/env bash
 set -euo pipefail
 TAG="$TAG"
@@ -71,30 +72,33 @@ else
 fi
 echo "[load] 完成"
 LOAD
-chmod +x "$DIR/scripts/load.sh"
+chmod +x "$DIR/deploy/scripts/load.sh" "$DIR/deploy/scripts/"*.sh
 cp "$ROOT/docs/runbook/RB-01-部署.md" "$ROOT/docs/runbook/RB-02-回滚.md" "$DIR/runbook/"
 
 cat > "$DIR/安装说明.txt" <<TXT
 Interroll PoC $TAG —— 离线安装
 
 1) 导入镜像（约 3GB，约 1 分钟）
-   bash scripts/load.sh
+   bash deploy/scripts/load.sh
    # 它会 load 镜像并摘掉 podman 的 localhost/ 前缀，否则 compose 找不到镜像
 
 2) 准备环境
    cp .env.example .env
    vi .env            # 必改 DB_PASSWORD；确认端口 1884/5433/8001/5174 空闲
 
-3) 起栈
-   docker compose --env-file .env -f compose/compose.yaml up -d
+3) 起栈（两台引擎都支持，按目标机选一个）
+   docker compose --env-file .env -f deploy/compose/compose.yaml up -d
+   # 纯 podman 环境：
+   #   podman system service --time=0 &          # 或 systemctl --user enable --now podman.socket
+   #   podman compose --env-file .env -f deploy/compose/compose.yaml up -d
 
 4) 验收
    curl -s localhost:8001/healthz        # ok:true, version:$TAG
    浏览器打开 http://<本机IP>:5174
 
 5) 回滚 / 诊断
-   bash scripts/rollback.sh <另一个版本>   # 需先 docker load 那个版本的 images.tar
-   bash scripts/diag.sh                    # 出 diag-<ts>.zip
+   ENGINE=podman bash deploy/scripts/rollback.sh <另一个版本>
+   ENGINE=podman bash deploy/scripts/diag.sh        # 出 diag-<ts>.zip
 
 注意：compose 里 pull_policy=never，镜像必须来自本包，现场不会联网拉取。
 TXT

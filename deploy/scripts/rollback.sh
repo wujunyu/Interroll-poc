@@ -5,7 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TAG="${1:-${TAG:-}}"
-COMPOSE="docker compose --env-file $ROOT/.env -f $ROOT/deploy/compose/compose.yaml"
+ENGINE="${ENGINE:-docker}"   # 目标机只有 podman 时：ENGINE=podman
+COMPOSE="$ENGINE compose --env-file $ROOT/.env -f $ROOT/deploy/compose/compose.yaml"
 API_PORT="$(grep -E '^API_PORT=' "$ROOT/.env" | cut -d= -f2 || echo 8001)"
 API_PORT="${API_PORT:-8001}"
 
@@ -19,7 +20,7 @@ echo "[rollback] → $TAG"
 
 # 1) 先确认目标 tag 的镜像在本地，不在就别动线上
 for svc in api ingest web; do
-  if ! docker image inspect "interroll-poc-$svc:$TAG" >/dev/null 2>&1; then
+  if ! $ENGINE image inspect "interroll-poc-$svc:$TAG" >/dev/null 2>&1; then
     echo "[rollback] ✗ 本地没有 interroll-poc-$svc:$TAG，中止（不做半截回滚）" >&2
     exit 3
   fi
