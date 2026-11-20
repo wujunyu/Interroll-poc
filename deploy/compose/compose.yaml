@@ -2,8 +2,16 @@
 # 路径相对本文件：../../code/* 即仓库根的 code/*。
 name: ${COMPOSE_PROJECT_NAME:-interroll-poc}
 
+# 边缘机磁盘小：日志必须有上限，否则跑几个月把盘写满
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   mqtt:
+    logging: *default-logging
     image: eclipse-mosquitto:2
     restart: unless-stopped
     ports:
@@ -17,6 +25,7 @@ services:
       retries: 3
 
   db:
+    logging: *default-logging
     image: timescale/timescaledb:latest-pg17
     restart: unless-stopped
     environment:
@@ -35,6 +44,7 @@ services:
       retries: 10
 
   ingest:
+    logging: *default-logging
     # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
     image: interroll-poc-ingest:${APP_VERSION:-0.3.1}
     pull_policy: never   # 本地镜像，别去远端找
@@ -48,6 +58,7 @@ services:
       mqtt: { condition: service_started }
 
   api:
+    logging: *default-logging
     # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
     image: interroll-poc-api:${APP_VERSION:-0.3.1}
     pull_policy: never   # 本地镜像，别去远端找
@@ -63,6 +74,7 @@ services:
       db: { condition: service_healthy }
 
   web:
+    logging: *default-logging
     # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
     image: interroll-poc-web:${APP_VERSION:-0.3.1}
     pull_policy: never   # 本地镜像，别去远端找
@@ -74,6 +86,7 @@ services:
 
   # 只在开发/演示时开：docker compose --profile demo up -d simulator
   simulator:
+    logging: *default-logging
     # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
     image: interroll-poc-simulator:${APP_VERSION:-0.3.1}
     pull_policy: never   # 本地镜像，别去远端找

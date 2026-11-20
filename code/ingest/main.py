@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import threading
 import time
 from datetime import datetime, timezone
@@ -203,8 +204,13 @@ class Health(BaseHTTPRequestHandler):
         return
 
 
+def _on_sigterm(signum, frame):  # docker stop / systemd stop 发的是 SIGTERM
+    raise KeyboardInterrupt
+
+
 def main() -> int:
     global _conn
+    signal.signal(signal.SIGTERM, _on_sigterm)
     get_conn(force_new=True)
     conn = _conn
     with conn.cursor() as cur:
