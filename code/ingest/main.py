@@ -19,9 +19,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import paho.mqtt.client as mqtt
 import psycopg
+
+from log_setup import setup as setup_log
 from psycopg.rows import dict_row
 
 DSN = os.environ["DB_DSN"]
+VERSION = os.environ.get("APP_VERSION", "dev")
+log = setup_log("ingest", os.environ.get("LOG_LEVEL", "INFO"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.environ.get("MQTT_USERNAME", "")
@@ -52,7 +56,20 @@ def spool_rows(rows: list[tuple]) -> None:
             fh.write(json.dumps([row[0].isoformat(), *row[1:]], ensure_ascii=False) + "\n")
     with state_lock:
         stats["spooled"] += len(rows)
-    print(f"! 写库失败，{len(rows)} 行落 spool：{path}", flush=True)
+    log.warning("flush failed, spooled", extra={"rows": len(rows), "detail": path})
+
+
+def event(conn: psycopg.Connection, kind: str, severity: str = "info", **detail) -> None:
+    """关键事件写库（不是日志流水）：启动/断库/恢复/补传完成。写失败不影响数据面。"""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO events (ts, kind, severity, detail) VALUES (now(), %s, %s, %s::jsonb)",
+                (kind, severity, json.dumps({"version": VERSION, **detail}, ensure_ascii=False)),
+            )
+        conn.commit()
+    except Exception:
+        pass
 
 
 def spool_pending() -> int:
@@ -105,13 +122,15 @@ def replay_spool() -> None:
             with state_lock:
                 stats["spooled"] = max(0, stats["spooled"] - total)
                 stats["rows_written"] += total
-            print(f"· 补传 {total} 行（{name}）", flush=True)
+            log.info("spool replayed", extra={"rows": total, "detail": name})
+            event(conn, "spool_replayed", rows=total, file=name)
     finally:
         conn.close()
 
 
 _conn: psycopg.Connection | None = None
 _conn_lock = threading.Lock()
+_db_down = False   # 用于在恢复时补一条事件，而不是在断库时（那时也写不进去）
 
 
 def get_conn(force_new: bool = False) -> psycopg.Connection:
@@ -128,11 +147,15 @@ def flush() -> int:
         if not buffer:
             return 0
         rows, buffer[:] = list(buffer), []
+    global _db_down
     try:
         conn = get_conn()
         with conn.cursor() as cur:
             cur.executemany(INSERT_SQL, rows)
         conn.commit()
+        if _db_down:
+            _db_down = False
+            event(conn, "db_recovered", "warning")
     except Exception as exc:  # 库挂了：不丢数据，整批落 spool
         try:
             if conn is not None:
@@ -140,14 +163,15 @@ def flush() -> int:
         except Exception:
             pass
         spool_rows(rows)
-        print(f"! flush 失败（已落 spool）：{exc}", flush=True)
+        _db_down = True
+        log.error("flush failed", extra={"detail": str(exc)[:200]})
         return 0
     with state_lock:
         stats["rows_written"] += len(rows)
         stats["batches"] += 1
         stats["last_flush"] = time.time()
         stats["last_ts"] = rows[-1][0]
-    print(f"· flush {len(rows)} 行 (累计 {stats['rows_written']})", flush=True)
+    log.debug("flush", extra={"rows": len(rows)})
     return len(rows)
 
 
@@ -220,13 +244,14 @@ def main() -> int:
         row = cur.fetchone()
         if row and row[0]:
             stats["last_ts"] = row[0]
-            print(f"· 水位线从库恢复：{row[0].isoformat()}", flush=True)
-    print(f"✓ 已连库 {DSN.split('@')[-1]}", flush=True)
+            log.info("watermark restored", extra={"detail": row[0].isoformat()})
+    log.info("db connected")
 
     srv = ThreadingHTTPServer(("0.0.0.0", HEALTH_PORT), Health)
     srv.conn = conn
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print(f"· /healthz 监听 :{HEALTH_PORT}", flush=True)
+    log.info("healthz listening", extra={"detail": HEALTH_PORT})
+    event(_conn, "ingest_start")
 
     cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"ingest-{os.getpid()}")
     cli.on_message = on_message
@@ -235,7 +260,7 @@ def main() -> int:
     cli.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
     cli.subscribe(TOPIC, qos=1)
     cli.loop_start()
-    print(f"· 已订阅 {TOPIC} @ {MQTT_HOST}:{MQTT_PORT}", flush=True)
+    log.info("subscribed", extra={"detail": f"{TOPIC} @ {MQTT_HOST}:{MQTT_PORT}"})
 
     def replay_loop() -> None:
         while True:
@@ -261,7 +286,11 @@ def main() -> int:
                 last_flush = time.time()
     except KeyboardInterrupt:
         flush()
-        print("\n· 已停止", flush=True)
+        try:
+            event(get_conn(), "ingest_stop")
+        except Exception:
+            pass
+        log.info("stopped")
     finally:
         cli.loop_stop()
         conn.close()

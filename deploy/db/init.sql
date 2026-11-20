@@ -42,6 +42,15 @@ SELECT add_continuous_aggregate_policy('telemetry_1m',
        schedule_interval => INTERVAL '1 minute',
        if_not_exists => TRUE);
 
+-- 事件表：只记「发生了什么」，不记日志流水（审计 / 诊断包时间线）
+CREATE TABLE IF NOT EXISTS events (
+    ts       timestamptz NOT NULL DEFAULT now(),
+    kind     text        NOT NULL,          -- ingest_start / db_recovered / spool_replayed / ingest_stop
+    severity text        NOT NULL DEFAULT 'info',
+    detail   jsonb       NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS ix_events_ts ON events (ts DESC);
+
 -- 保留：原始 7 天、聚合 90 天
 SELECT add_retention_policy('telemetry',    INTERVAL '7 days',  if_not_exists => TRUE);
 SELECT add_retention_policy('telemetry_1m', INTERVAL '90 days', if_not_exists => TRUE);

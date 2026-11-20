@@ -21,6 +21,8 @@ echo "[diag] 收集系统信息"
   echo
   echo "--- containers"
   $COMPOSE ps 2>/dev/null || true
+  echo "--- 退出码（137=SIGKILL 常见于 OOM，143=SIGTERM，1=异常）"
+  $ENGINE ps -a --filter "name=interroll-poc" --format '{{.Names}}\t{{.Status}}' 2>/dev/null || true
   echo
   echo "--- healthz"
   curl -fsS "http://127.0.0.1:$(grep -E '^API_PORT=' "$ROOT/.env" | cut -d= -f2 || echo 8001)/healthz" 2>/dev/null || echo "api 不可达"
@@ -51,6 +53,14 @@ union all select '聚合行数', count(*)::text from telemetry_1m
 union all select '最新水位', max(ts)::text from telemetry;
 select hypertable_name, pg_size_pretty(hypertable_size(format('%I', hypertable_name)::regclass)) as size
 from timescaledb_information.hypertables;
+SQL
+
+echo "[diag] 导出事件时间线（最近 200 条）"
+$ENGINE exec -i -e PGPASSWORD="$(grep -E '^DB_PASSWORD=' "$ROOT/.env" | cut -d= -f2)" \
+  interroll-poc-db-1 psql -U "$(grep -E '^DB_USER=' "$ROOT/.env" | cut -d= -f2)" \
+  -d "$(grep -E '^DB_NAME=' "$ROOT/.env" | cut -d= -f2)" -tA <<'SQL' > "$PKG/events.ndjson" 2>&1 || echo "事件表不可读" > "$PKG/events.ndjson"
+select json_build_object('ts', ts, 'kind', kind, 'severity', severity, 'detail', detail)
+from events order by ts desc limit 200;
 SQL
 
 echo "[diag] 打包"

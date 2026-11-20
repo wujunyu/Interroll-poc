@@ -21,6 +21,8 @@ from typing import Any
 import paho.mqtt.client as mqtt
 import psycopg
 import uvicorn
+
+from log_setup import setup as setup_log
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from alerts import AlertEngine, Rule
@@ -51,6 +53,8 @@ engine = AlertEngine(
 
 WINDOWS = {"60s": 60, "5m": 300, "1h": 3600, "6h": 21600, "24h": 86400}
 
+log = setup_log("api", os.environ.get("LOG_LEVEL", "INFO"))
+
 app = FastAPI(title="Interroll PoC API", version=VERSION)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
@@ -78,9 +82,9 @@ def on_message(client, userdata, msg) -> None:
         return
     try:
         for alert in engine.update(p):
-            print(f"· [alert] {alert.state} {alert.message}", flush=True)
+            log.info("alert", extra={"detail": f"{alert.state} {alert.message}"})
     except Exception as exc:  # 规则写错不能把 MQTT 线程带走
-        print(f"! [alert] 规则执行失败：{exc}", flush=True)
+        log.error("alert rule failed", extra={"detail": str(exc)[:200]})
     with live_lock:
         live[(p["zone"], p["drive"])] = {
             "zone": p["zone"], "drive": p["drive"],
@@ -244,12 +248,13 @@ def sweeper() -> None:
         time.sleep(1.0)
         try:
             for alert in engine.sweep():
-                print(f"· [alert] {alert.state} {alert.message}", flush=True)
+                log.info("alert", extra={"detail": f"{alert.state} {alert.message}"})
         except Exception as exc:
-            print(f"! [alert] sweep 失败：{exc}", flush=True)
+            log.error("alert sweep failed", extra={"detail": str(exc)[:200]})
 
 
 def main() -> int:
+    log.info("api starting", extra={"detail": VERSION})
     threading.Thread(target=sweeper, daemon=True).start()
     start_mqtt()
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
