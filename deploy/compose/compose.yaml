@@ -75,5 +75,13 @@ services:
     depends_on:
       mqtt: { condition: service_started }
 
+# 宿主机的默认地址池（172.17–172.31）已被 33 个网络用满，这里显式指定网段，
+# 否则 compose 起栈会报 "all predefined address pools have been fully subnetted"。
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.77.31.0/24
+
 volumes:
   pgdata:

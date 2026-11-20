@@ -14,3 +14,6 @@ deploy/compose/pgdata/
 
 # 预览中间产物（preview.mjs 生成）
 docs/design/exports/.preview-*.html
+.venv/
+.conda-env/
+.conda-pkgs/
