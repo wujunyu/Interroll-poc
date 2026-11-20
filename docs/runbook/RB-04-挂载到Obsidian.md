@@ -24,7 +24,7 @@
 
 ```yaml
       # 代码仓库 docs -> vault 内 git-docs（真实目录：规避 Ignis 软链接守卫 + readdir 类型判定）
-      - /mnt/disk1t/workspacePerson/Interroll-poc/docs:/vaults/个人笔记/0.年度日记本/PARA/1.Project/开发-英特诺POC/git-docs
+      - /mnt/disk1t/workspacePersonal/Interroll-poc/docs:/vaults/个人笔记/0.年度日记本/PARA/1.Project/开发-英特诺POC/git-docs
 ```
 
 先在宿主机建好目标目录（否则 docker 会以 root 创建，属主不对）：
