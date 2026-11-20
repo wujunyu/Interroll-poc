@@ -29,6 +29,8 @@ TOPIC = os.environ.get("MQTT_TOPIC", "line/#")
 BATCH_ROWS = int(os.environ.get("BATCH_ROWS", "200"))
 BATCH_SECONDS = float(os.environ.get("BATCH_SECONDS", "1.0"))
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8091"))
+SPOOL_DIR = os.environ.get("SPOOL_DIR", "/tmp/interroll-ingest-spool")
+os.makedirs(SPOOL_DIR, exist_ok=True)
 
 INSERT_SQL = """
 INSERT INTO telemetry (ts, zone_id, drive_id, speed_mps, current_a, temp_c, state, seq)
@@ -38,17 +40,87 @@ ON CONFLICT (zone_id, drive_id, ts, seq) DO NOTHING
 
 state_lock = threading.Lock()
 buffer: list[tuple] = []
-stats = {"rows_written": 0, "last_ts": None, "last_flush": 0.0, "batches": 0}
+stats = {"rows_written": 0, "last_ts": None, "last_flush": 0.0, "batches": 0, "spooled": 0}
 
 
-def flush(conn: psycopg.Connection) -> int:
+def spool_rows(rows: list[tuple]) -> None:
+    """写库失败时兜底：整批落本地文件，等库恢复再补。"""
+    path = os.path.join(SPOOL_DIR, f"{int(time.time() * 1000)}.ndjson")
+    with open(path, "w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps([row[0].isoformat(), *row[1:]], ensure_ascii=False) + "\n")
+    with state_lock:
+        stats["spooled"] += len(rows)
+    print(f"! 写库失败，{len(rows)} 行落 spool：{path}", flush=True)
+
+
+def spool_pending() -> int:
+    n = 0
+    for name in os.listdir(SPOOL_DIR):
+        if name.endswith(".ndjson"):
+            with open(os.path.join(SPOOL_DIR, name), encoding="utf-8") as fh:
+                n += sum(1 for _ in fh)
+    return n
+
+
+def replay_spool() -> None:
+    """独立线程 + 独立连接：库恢复后把 spool 文件按时间顺序补回。"""
+    files = sorted(f for f in os.listdir(SPOOL_DIR) if f.endswith(".ndjson"))
+    if not files:
+        return
+    conn = psycopg.connect(DSN)
+    try:
+        for name in files:
+            path = os.path.join(SPOOL_DIR, name)
+            rows = []
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    ts, zone, drive, speed, current, temp, state, seq = json.loads(line)
+                    rows.append((datetime.fromisoformat(ts), zone, drive, speed, current, temp, state, seq))
+            with conn.cursor() as cur:
+                cur.executemany(INSERT_SQL, rows)
+            conn.commit()
+            os.remove(path)
+            with state_lock:
+                stats["spooled"] = max(0, stats["spooled"] - len(rows))
+                stats["rows_written"] += len(rows)
+            print(f"· 补传 {len(rows)} 行（{name}）", flush=True)
+    finally:
+        conn.close()
+
+
+_conn: psycopg.Connection | None = None
+_conn_lock = threading.Lock()
+
+
+def get_conn(force_new: bool = False) -> psycopg.Connection:
+    """连接断了就重连；重连失败抛给调用方，由调用方落 spool。"""
+    global _conn
+    with _conn_lock:
+        if force_new or _conn is None or _conn.closed:
+            _conn = psycopg.connect(DSN)
+        return _conn
+
+
+def flush() -> int:
     with state_lock:
         if not buffer:
             return 0
         rows, buffer[:] = list(buffer), []
-    with conn.cursor() as cur:
-        cur.executemany(INSERT_SQL, rows)
-    conn.commit()
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.executemany(INSERT_SQL, rows)
+        conn.commit()
+    except Exception as exc:  # 库挂了：不丢数据，整批落 spool
+        try:
+            if conn is not None:
+                conn.rollback()
+        except Exception:
+            pass
+        spool_rows(rows)
+        print(f"! flush 失败（已落 spool）：{exc}", flush=True)
+        return 0
     with state_lock:
         stats["rows_written"] += len(rows)
         stats["batches"] += 1
@@ -97,7 +169,7 @@ class Health(BaseHTTPRequestHandler):
             "version": os.environ.get("APP_VERSION", "dev"),
             "rows_written": written,
             "pending_in_buffer": pending,
-            "spool_rows": 0,
+            "spool_rows": spool_pending(),
             "lag_seconds": lag,
             "batches": stats["batches"],
         }, ensure_ascii=False).encode()
@@ -112,9 +184,17 @@ class Health(BaseHTTPRequestHandler):
 
 
 def main() -> int:
-    conn = psycopg.connect(DSN, autocommit=False)
+    global _conn
+    get_conn(force_new=True)
+    conn = _conn
     with conn.cursor() as cur:
         cur.execute("select 1")
+        # 水位线不单独存表：库里 max(ts) 就是水位，重启后自动恢复，少一份可能写歪的状态
+        cur.execute("select max(ts) from telemetry")
+        row = cur.fetchone()
+        if row and row[0]:
+            stats["last_ts"] = row[0]
+            print(f"· 水位线从库恢复：{row[0].isoformat()}", flush=True)
     print(f"✓ 已连库 {DSN.split('@')[-1]}", flush=True)
 
     srv = ThreadingHTTPServer(("0.0.0.0", HEALTH_PORT), Health)
@@ -131,6 +211,16 @@ def main() -> int:
     cli.loop_start()
     print(f"· 已订阅 {TOPIC} @ {MQTT_HOST}:{MQTT_PORT}", flush=True)
 
+    def replay_loop() -> None:
+        while True:
+            time.sleep(2.0)
+            try:
+                replay_spool()
+            except Exception:
+                pass  # 库还没好，下一轮再试
+
+    threading.Thread(target=replay_loop, daemon=True).start()
+
     last_flush = time.time()
     try:
         while True:
@@ -141,10 +231,10 @@ def main() -> int:
                 due_rows = len(buffer) >= BATCH_ROWS
             due_time = (time.time() - last_flush) >= BATCH_SECONDS
             if due_rows or due_time:
-                flush(conn)
+                flush()
                 last_flush = time.time()
     except KeyboardInterrupt:
-        flush(conn)
+        flush()
         print("\n· 已停止", flush=True)
     finally:
         cli.loop_stop()

@@ -20,8 +20,8 @@ docker compose --env-file .env -f deploy/compose/compose.yaml up -d mqtt   # 188
 # 10Hz 造数 10 秒，QoS1
 .conda-env/bin/python code/simulator/main.py --duration 10 --qos 1
 
-# 第 5 秒断网 8 秒（消息只进本地缓冲，只计数不重发）
-.conda-env/bin/python code/simulator/main.py --duration 20 --offline-at 5 --offline-for 8
+# 第 5 秒断网 8 秒：消息落 spool，恢复后限速补发
+.conda-env/bin/python code/simulator/main.py --duration 20 --offline-at 5 --offline-for 8 --replay-rate 400
 
 # QoS 实验：300 条 @100/s，中途把订阅端踢下线 1.5 秒
 .conda-env/bin/python code/simulator/qos_lab.py --qos 1 --count 300 --rate 100 \
