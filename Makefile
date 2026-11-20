@@ -17,8 +17,8 @@ config: .env ## 校验 compose 与变量（不启动）
 up-infra: .env ## 只起 mqtt + db（骨架期可用）
 	$(COMPOSE) up -d mqtt db
 
-up: .env ## 起全栈（B 批完成后可用）
-	$(COMPOSE) up -d --build
+up: .env ## 起全栈（用已构建好的镜像，不现场 build）
+	$(COMPOSE) up -d
 
 down: ## 停栈，保留数据卷
 	$(COMPOSE) down
@@ -34,6 +34,9 @@ web: ## 前端开发服务器（5174，需先起 ingest/api）
 
 tokens: ## 设计色板 -> CSS 变量
 	node scripts/gen-tokens.mjs
+
+images: ## 用 podman 构建四个镜像（需在宿主机执行，见脚本）
+	bash deploy/scripts/build-images.sh
 
 sim: ## 10Hz 造数 10 秒（QoS1）
 	.conda-env/bin/python code/simulator/main.py --duration 10 --qos 1

@@ -1,0 +1,9 @@
+FROM python:3.11-alpine
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    TZ=Asia/Shanghai
+RUN sed -i 's#dl-cdn.alpinelinux.org#mirrors.aliyun.com#g' /etc/apk/repositories \
+ && apk add --no-cache tzdata
+WORKDIR /app
+RUN pip install --no-cache-dir paho-mqtt==2.2.0
+COPY *.py ./
+CMD ["python", "main.py", "--duration", "0"]

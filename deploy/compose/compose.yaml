@@ -35,7 +35,9 @@ services:
       retries: 10
 
   ingest:
-    build: ../../code/ingest
+    # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
+    image: interroll-poc-ingest:${APP_VERSION:-0.3.1}
+    pull_policy: never   # 本地镜像，别去远端找
     restart: unless-stopped
     environment:
       MQTT_HOST: mqtt
@@ -46,9 +48,14 @@ services:
       mqtt: { condition: service_started }
 
   api:
-    build: ../../code/api
+    # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
+    image: interroll-poc-api:${APP_VERSION:-0.3.1}
+    pull_policy: never   # 本地镜像，别去远端找
     restart: unless-stopped
     environment:
+      APP_VERSION: ${APP_VERSION:-0.3.1}
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
       DB_DSN: postgresql://${DB_USER:-poc}:${DB_PASSWORD}@db:5432/${DB_NAME:-poc}
     ports:
       - "${API_PORT:-8001}:8000"
@@ -56,7 +63,9 @@ services:
       db: { condition: service_healthy }
 
   web:
-    build: ../../code/web
+    # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
+    image: interroll-poc-web:${APP_VERSION:-0.3.1}
+    pull_policy: never   # 本地镜像，别去远端找
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-5174}:80"
@@ -65,7 +74,9 @@ services:
 
   # 只在开发/演示时开：docker compose --profile demo up -d simulator
   simulator:
-    build: ../../code/simulator
+    # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
+    image: interroll-poc-simulator:${APP_VERSION:-0.3.1}
+    pull_policy: never   # 本地镜像，别去远端找
     profiles: ["demo"]
     environment:
       MQTT_HOST: mqtt

@@ -20,3 +20,5 @@ docs/design/exports/.preview-*.html
 .npm-cache/
 node_modules/
 dist/
+.docker-config/
+.env.dev

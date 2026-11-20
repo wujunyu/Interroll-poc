@@ -1,0 +1,12 @@
+# Debian slim：glibc，psycopg[binary] 有现成 wheel，不用装 libpq、不用编译
+FROM python:3.12-slim
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai \
+    HEALTH_PORT=8081
+WORKDIR /app
+RUN pip install --no-cache-dir "psycopg[binary]==3.3.9" paho-mqtt==2.2.0
+COPY *.py ./
+EXPOSE 8081
+CMD ["python", "main.py"]

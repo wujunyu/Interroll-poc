@@ -22,7 +22,7 @@ CST = timezone(timedelta(hours=8))
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="产线遥测模拟器")
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--host", default=os.environ.get("MQTT_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("MQTT_PORT", "1883")))
     ap.add_argument("--user", default=os.environ.get("MQTT_USERNAME", ""))
     ap.add_argument("--password", default=os.environ.get("MQTT_PASSWORD", ""))

@@ -1,0 +1,13 @@
+# Debian slim：glibc，psycopg[binary] 有现成 wheel
+FROM python:3.12-slim
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai \
+    API_PORT=8000
+WORKDIR /app
+RUN pip install --no-cache-dir "psycopg[binary]==3.3.9" paho-mqtt==2.2.0 \
+    fastapi==0.165.0 "uvicorn[standard]==0.54.0"
+COPY *.py ./
+EXPOSE 8000
+CMD ["python", "main.py"]

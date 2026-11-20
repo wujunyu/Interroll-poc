@@ -26,13 +26,16 @@
 ## 命令
 
 ```bash
-make            # 列出所有目标
-make config     # 校验 compose 与 .env（不启动）
-make up-infra   # 只起 mqtt + db（B 批前唯一能起的）
-make up         # 全栈（B 批完成后可用）
+make images     # 用 podman 构建四个镜像（--load 会同时导入 docker）
+make up         # 起全栈（用已构建镜像，不现场 build）
+make ps / logs  # 看状态 / 跟日志
+make rollback TAG=0.3.0   # 切版本重建，等 /healthz 报版本（实测 12s）
+make diag       # 出 dist/interroll-diag-<ts>.zip（脱敏）
 make down       # 停栈，保留数据卷
-make verify     # 骨架期：config + 语法检查；B 批后加 smoke
+make verify     # config + 语法
 ```
+
+> 本机直跑 Python（不起容器）时用 `.env.dev`；compose 只读 `.env`，两者不要混。
 
 ## 目录
 

@@ -1,0 +1,5 @@
+# Debian 13 (trixie) — 中科大镜像（2026-11-20 切换，实测 2.45MB/s vs 阿里云 1.81MB/s）
+deb https://mirrors.ustc.edu.cn/debian/ trixie main contrib non-free non-free-firmware
+deb https://mirrors.ustc.edu.cn/debian/ trixie-updates main contrib non-free non-free-firmware
+deb https://mirrors.ustc.edu.cn/debian/ trixie-backports main contrib non-free non-free-firmware
+deb https://mirrors.ustc.edu.cn/debian-security/ trixie-security main contrib non-free non-free-firmware
