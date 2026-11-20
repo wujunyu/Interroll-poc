@@ -38,7 +38,7 @@ make verify     # 骨架期：config + 语法检查；B 批后加 smoke
 
 ```
 code/       按交付单元分（一个容器一个目录）：simulator / ingest / api / web
-deploy/     编排与现场资产：compose / quadlet / db / scripts
+deploy/     Docker 编排与运维脚本：compose / db / scripts
 docs/       文档：架构、ADR、runbook、kb（分层知识库）、design（看板设计）、WBS
 tests/      unit / e2e
 scripts/    开发辅助

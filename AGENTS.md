@@ -10,7 +10,7 @@
 - 代码只写 `code/` 下；`deploy/` 只放编排与脚本；`docs/` 只放文档。
 - 只用 `make` 入口。禁止 `docker run`、禁止手工改库（要改就改 `deploy/db/init.sql`）。
 - 不引 GPL/AGPL 依赖；不提交 `.env`、不提交数据卷；日志不落明文密码。
-- **不写 K8s 清单**：演示规模不需要，写了是减分。
+- **只做程序功能 + Docker**：不写 K8s 清单、不做 Podman/quadlet/边缘交付包（ADR-0004）。
 - 改端口/表结构前，先改 `.env.example` 与 `deploy/db/init.sql`，再同步 README 的端口表。
 
 ## 目录约定
@@ -18,7 +18,7 @@
 | 目录 | 放什么 | 不放什么 |
 |---|---|---|
 | `code/<svc>/` | 一个容器一个目录，`Containerfile` 就地在内 | 共享库（复制小段代码优于抽象） |
-| `deploy/compose/` | `compose.yaml` + `compose.dev.yaml` / `compose.edge.yaml` | 业务代码、密钥 |
+| `deploy/compose/` | `compose.yaml` + `compose.dev.yaml` | 业务代码、密钥 |
 | `deploy/scripts/` | backup / restore / rollback / diag，全部幂等 | 交互式脚本 |
 | `docs/adr/` | 一条决策一个文件，带「代价」一节 | 教程 |
 | `docs/kb/` | 分层知识库（见 `docs/kb/_契约/SCHEMA.md`） | 大段复制的原文 |

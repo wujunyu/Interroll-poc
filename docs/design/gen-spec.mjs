@@ -146,20 +146,41 @@ const b2 = (() => {
   c.push(R(0, 64, W, 44, T.bg), TX(24, 76, '总览  /  Z3 分流 A  /  D02', { size: 12, color: T.sub }))
   c.push(R(1104, 72, 132, 28, T.card, 14, { strokeColor: T.line }), TX(1120, 78, '切换区 ▾', { size: 12, color: T.sub }))
 
+  // 缩放：− / 百分比 / + / 复位；滚轮与双击也走同一条路径（ADR-0003 的抽样策略在这里生效）
   c.push(...panel(24, 128, 900, 420, '速度趋势 · D02 · 10Hz', [
-    R(664, 144, 56, 28, T.card2, 14), TX(680, 150, '1m', { size: 12, color: T.text }),
-    R(726, 144, 56, 28, null, 14), TX(742, 150, '5m', { size: 12, color: T.dim }),
-    R(788, 144, 56, 28, null, 14), TX(804, 150, '1h', { size: 12, color: T.dim }),
-    TX(860, 150, 'LTTB', { size: 11, color: T.dim }),
+    R(516, 144, 52, 28, T.card2, 14), TX(530, 150, '1m', { size: 12, color: T.text }),
+    R(574, 144, 52, 28, null, 14), TX(588, 150, '5m', { size: 12, color: T.dim }),
+    R(632, 144, 52, 28, null, 14), TX(646, 150, '1h', { size: 12, color: T.dim }),
+    R(716, 144, 28, 28, T.card, 8, { strokeColor: T.line }), TX(725, 148, '−', { size: 15, color: T.text }),
+    R(748, 144, 56, 28, null, 8), TX(757, 150, '100%', { size: 12, color: T.sub }),
+    R(808, 144, 28, 28, T.card, 8, { strokeColor: T.line }), TX(817, 148, '+', { size: 15, color: T.text }),
+    R(844, 144, 56, 28, null, 8), TX(852, 150, '复位', { size: 11, color: T.dim }),
+    TX(716, 178, '滚轮缩放 · 双击复位 · 缩放后按可见窗口重新抽样', { size: 10, color: T.dim }),
   ]))
-  for (let g = 0; g < 4; g++) c.push(R(64, 210 + g * 65, 820, 1, T.line))
-  for (let i = 0; i < 40; i++) {
-    const h = 46 + Math.round(96 * (0.5 + 0.5 * Math.sin(i / 2.6) * Math.sin(i / 7.3)))
-    c.push(R(64 + i * 20, 470 - h, 13, h, T.accent, 2, { opacity: 0.9 }))
+  // 10Hz 的证据是一个「波形」，不是柱状图：600 个点、1.37px/点，画成面积图；
+  // 中间空 8 秒 = 断网，曲线断开但恢复后补齐——这一屏就是给「抗不抗得住 10Hz」看的。
+  const chartX = 64, chartW = 820, baseY = 450, chartH = 235, nPts = 600
+  for (let g = 0; g < 4; g++) c.push(R(chartX, 200 + g * 62, chartW, 1, T.line))
+  for (let i = 0; i < nPts; i++) {
+    if (i >= 240 && i < 320) continue
+    const t = i / nPts
+    const v = 0.55 + 0.18 * Math.sin(t * Math.PI * 2 * 2.5) + 0.05 * Math.sin(t * Math.PI * 2 * 23) + 0.035 * Math.sin(i * 1.7)
+    const h = Math.max(8, v * chartH)
+    c.push(R(chartX + i * 1.37, baseY - h, 1.6, h, T.accent, 0))
   }
-  c.push(R(64, 470, 820, 1, T.dim))
-  c.push(TX(64, 480, '0.0 m/s', { size: 11, color: T.dim }), TX(760, 480, '0.8 m/s', { size: 11, color: T.dim }))
-  c.push(TX(64, 500, '采样 10Hz · 窗口 60s · 600 点/序列 · 渲染 58fps', { size: 11, color: T.dim }))
+  c.push(R(chartX, baseY, chartW, 1, T.dim))
+  c.push(R(chartX + 240 * 1.37, 206, 80 * 1.37, chartH + 4, T.bad, 0, { opacity: 0.1 }))
+  c.push(TX(chartX + 240 * 1.37 + 6, 224, '断网 8s', { size: 11, color: T.bad }))
+  c.push(TX(chartX - 6, 196, '0.8', { size: 10, color: T.dim }))
+  c.push(TX(chartX - 6, baseY - 8, '0.0', { size: 10, color: T.dim }))
+  ;['−60s', '−45s', '−30s', '−15s', 'now'].forEach((t, i) => c.push(TX(chartX + i * 200, 460, t, { size: 10, color: T.dim })))
+  // 指标条：把「10Hz 扛得住」变成四个可核对的数
+  const metric = (x, label, val, color) => [TX(x, 486, label, { size: 10, color: T.dim }), TX(x, 502, val, { size: 16, weight: 600, color: color || T.text })]
+  c.push(...metric(chartX, '采样率', '10 Hz'))
+  c.push(...metric(chartX + 150, '窗口点数', '600'))
+  c.push(...metric(chartX + 300, '缩放 · 60s 窗口', '100%'))
+  c.push(...metric(chartX + 490, '渲染', '58 fps', T.ok))
+  c.push(...metric(chartX + 640, '帧耗时 P95', '12 ms', T.ok))
 
   const rx = 944, rw = 472
   c.push(...panel(rx, 128, rw, 420, '点位明细'))
