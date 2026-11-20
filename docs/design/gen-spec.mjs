@@ -155,32 +155,53 @@ const b2 = (() => {
     R(748, 144, 56, 28, null, 8), TX(757, 150, '100%', { size: 12, color: T.sub }),
     R(808, 144, 28, 28, T.card, 8, { strokeColor: T.line }), TX(817, 148, '+', { size: 15, color: T.text }),
     R(844, 144, 56, 28, null, 8), TX(852, 150, '复位', { size: 11, color: T.dim }),
-    TX(716, 178, '滚轮缩放 · 双击复位 · 缩放后按可见窗口重新抽样', { size: 10, color: T.dim }),
+    TX(600, 178, '拖选放大 · 滚轮锚定光标 · Shift+拖 平移 · 双击复位', { size: 10, color: T.dim }),
   ]))
-  // 10Hz 的证据是一个「波形」，不是柱状图：600 个点、1.37px/点，画成面积图；
-  // 中间空 8 秒 = 断网，曲线断开但恢复后补齐——这一屏就是给「抗不抗得住 10Hz」看的。
-  const chartX = 64, chartW = 820, baseY = 450, chartH = 235, nPts = 600
-  for (let g = 0; g < 4; g++) c.push(R(chartX, 200 + g * 62, chartW, 1, T.line))
+  // 10Hz 的证据是「波形」而不是柱状图：600 个点、1.37px/点；
+  // 中间空 8 秒 = 断网。交互按 Grafana 的规则：拖选放大 / 滚轮锚定光标 / Shift+拖平移 / 双击复位，
+  // 底部概览条负责「我现在在看 1 小时里的哪一段」。
+  const chartX = 64, chartW = 820, baseY = 408, chartH = 208, nPts = 600
+  for (let g = 0; g < 4; g++) c.push(R(chartX, 200 + g * 52, chartW, 1, T.line))
   for (let i = 0; i < nPts; i++) {
     if (i >= 240 && i < 320) continue
     const t = i / nPts
     const v = 0.55 + 0.18 * Math.sin(t * Math.PI * 2 * 2.5) + 0.05 * Math.sin(t * Math.PI * 2 * 23) + 0.035 * Math.sin(i * 1.7)
-    const h = Math.max(8, v * chartH)
+    const h = Math.max(7, v * chartH)
     c.push(R(chartX + i * 1.37, baseY - h, 1.6, h, T.accent, 0))
   }
   c.push(R(chartX, baseY, chartW, 1, T.dim))
-  c.push(R(chartX + 240 * 1.37, 206, 80 * 1.37, chartH + 4, T.bad, 0, { opacity: 0.1 }))
-  c.push(TX(chartX + 240 * 1.37 + 6, 224, '断网 8s', { size: 11, color: T.bad }))
+  c.push(R(chartX + 240 * 1.37, 200, 80 * 1.37, chartH + 4, T.bad, 0, { opacity: 0.1 }))
+  c.push(TX(chartX + 240 * 1.37 + 6, 214, '断网 8s', { size: 11, color: T.bad }))
   c.push(TX(chartX - 6, 196, '0.8', { size: 10, color: T.dim }))
   c.push(TX(chartX - 6, baseY - 8, '0.0', { size: 10, color: T.dim }))
-  ;['−60s', '−45s', '−30s', '−15s', 'now'].forEach((t, i) => c.push(TX(chartX + i * 200, 460, t, { size: 10, color: T.dim })))
-  // 指标条：把「10Hz 扛得住」变成四个可核对的数
-  const metric = (x, label, val, color) => [TX(x, 486, label, { size: 10, color: T.dim }), TX(x, 502, val, { size: 16, weight: 600, color: color || T.text })]
+  ;['−60s', '−45s', '−30s', '−15s', 'now'].forEach((t, i) => c.push(TX(chartX + i * 200, 416, t, { size: 10, color: T.dim })))
+
+  // 拖选示意：一次正在进行的框选（虚线框 + 时长标签），让「拖选」这条交互看得见
+  c.push(R(chartX + 120, 200, 168, chartH + 4, null, 0, { strokeColor: T.ok }))
+  c.push(R(chartX + 120, 200, 168, 18, T.ok, 0, { opacity: 0.18 }))
+  c.push(TX(chartX + 124, 204, '拖选 12.3s', { size: 10, color: T.ok }))
+
+  // 概览条：1 小时全量 + 当前窗口位置（拖它 = 平移）
+  const ovY = 436, ovH = 28
+  c.push(R(chartX, ovY, chartW, ovH, T.card2, 6))
+  for (let i = 0; i < 205; i++) {
+    const t = i / 205
+    const v = 0.55 + 0.18 * Math.sin(t * Math.PI * 2 * 2.5) + 0.06 * Math.sin(i * 2.9)
+    const h = Math.max(3, v * (ovH - 6))
+    c.push(R(chartX + i * 4, ovY + ovH - h - 4, 2.4, h, T.sub, 0, { opacity: 0.5 }))
+  }
+  // 视野框覆盖「全量里的 60s 区间」——不是全宽，才看得出可拖
+  c.push(R(chartX + 520, ovY - 2, 128, ovH + 4, null, 4, { strokeColor: T.accent, strokeWidth: 2 }))
+
+
+  // 指标条
+  const metric = (x, label, val, color) => [TX(x, 486, label, { size: 10, color: T.dim }), TX(x, 503, val, { size: 15, weight: 600, color: color || T.text })]
   c.push(...metric(chartX, '采样率', '10 Hz'))
-  c.push(...metric(chartX + 150, '窗口点数', '600'))
-  c.push(...metric(chartX + 300, '缩放 · 60s 窗口', '100%'))
-  c.push(...metric(chartX + 490, '渲染', '58 fps', T.ok))
-  c.push(...metric(chartX + 640, '帧耗时 P95', '12 ms', T.ok))
+  c.push(...metric(chartX + 140, '窗口点数', '600'))
+  c.push(...metric(chartX + 280, '缩放 · 视野', '100% · 60s'))
+  c.push(...metric(chartX + 450, '渲染', '58 fps', T.ok))
+  c.push(...metric(chartX + 580, '帧耗时 P95', '12 ms', T.ok))
+  c.push(...metric(chartX + 724, '重抽样', 'LTTB'))
 
   const rx = 944, rw = 472
   c.push(...panel(rx, 128, rw, 420, '点位明细'))
