@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -20,7 +21,9 @@ CST = timezone(timedelta(hours=8))
 def main() -> int:
     ap = argparse.ArgumentParser(description="产线遥测模拟器")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=1884)
+    ap.add_argument("--port", type=int, default=int(os.environ.get("MQTT_PORT", "1883")))
+    ap.add_argument("--user", default=os.environ.get("MQTT_USERNAME", ""))
+    ap.add_argument("--password", default=os.environ.get("MQTT_PASSWORD", ""))
     ap.add_argument("--hz", type=float, default=10.0)
     ap.add_argument("--duration", type=float, default=10.0, help="秒；0 表示一直跑")
     ap.add_argument("--qos", type=int, choices=(0, 1, 2), default=1)
@@ -32,6 +35,8 @@ def main() -> int:
 
     zones = tuple(z for z in args.zones.split(",") if z)
     cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"sim-{int(time.time())}")
+    if args.user:
+        cli.username_pw_set(args.user, args.password)
     cli.connect(args.host, args.port, keepalive=30)
     cli.loop_start()
 

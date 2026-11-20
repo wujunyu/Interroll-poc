@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -29,9 +30,12 @@ class Collector:
     （CONNACK 的 session_present=True 就是证据）。
     """
 
-    def __init__(self, host: str, port: int, topic: str, sub_qos: int, client_id: str) -> None:
+    def __init__(self, host: str, port: int, topic: str, sub_qos: int, client_id: str,
+                 user: str = "", password: str = "") -> None:
         self.host = host
         self.port = port
+        self.user = user
+        self.password = password
         self.topic = topic
         self.sub_qos = sub_qos
         self.client_id = client_id
@@ -65,6 +69,8 @@ class Collector:
         )
         client.on_connect = self._on_connect
         client.on_message = self._on_message
+        if self.user:
+            client.username_pw_set(self.user, self.password)
         client.connect(self.host, self.port, keepalive=30)
         client.loop_start()
         self.client = client
@@ -104,7 +110,9 @@ class Collector:
 def main() -> int:
     ap = argparse.ArgumentParser(description="QoS 故障注入实验")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=1884)
+    ap.add_argument("--port", type=int, default=int(os.environ.get("MQTT_PORT", "1883")))
+    ap.add_argument("--user", default=os.environ.get("MQTT_USERNAME", ""))
+    ap.add_argument("--password", default=os.environ.get("MQTT_PASSWORD", ""))
     ap.add_argument("--qos", type=int, choices=(0, 1, 2), default=1)
     ap.add_argument("--sub-qos", type=int, choices=(0, 1, 2), default=None,
                     help="不给则与 --qos 相同；用来验证「实际 QoS = min(pub, sub)」")
@@ -120,12 +128,15 @@ def main() -> int:
     run_id = f"{int(time.time() * 1000)}"
     topic = f"lab/qos/{run_id}"
 
-    sub = Collector(args.host, args.port, topic, sub_qos, client_id=f"lab-sub-{run_id}")
+    sub = Collector(args.host, args.port, topic, sub_qos, client_id=f"lab-sub-{run_id}",
+                    user=args.user, password=args.password)
     if not sub.connected.is_set():
         print("订阅端连不上 Broker", file=sys.stderr)
         return 2
 
     pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"lab-pub-{run_id}")
+    if args.user:
+        pub.username_pw_set(args.user, args.password)
     pub.connect(args.host, args.port, keepalive=30)
     pub.loop_start()
 

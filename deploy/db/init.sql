@@ -13,13 +13,14 @@ CREATE TABLE IF NOT EXISTS telemetry (
     temp_c      double precision,
     state       text,
     seq         bigint           NOT NULL,   -- 设备侧自增，补传去重用
-    PRIMARY KEY (drive_id, ts)
+    -- 设备身份是 (zone_id, drive_id)：六个区里都有 D01..D06，只用 drive_id 会撞
+    PRIMARY KEY (zone_id, drive_id, ts, seq)
 );
 
 SELECT create_hypertable('telemetry', 'ts', chunk_time_interval => INTERVAL '1 hour', if_not_exists => TRUE);
 
--- 幂等键：断网补传同一批不会写两遍
-CREATE UNIQUE INDEX IF NOT EXISTS ux_telemetry_idem ON telemetry (drive_id, ts, seq);
+-- 幂等键与主键一致：同一批补传重放不会写两遍
+-- （保留这条显式索引，是为了让「幂等键是哪几列」在文档里可见，不被主键细节掩盖）
 
 -- 1 分钟聚合：看板长窗口只查这里
 CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
