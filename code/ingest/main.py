@@ -64,7 +64,12 @@ def spool_pending() -> int:
 
 
 def replay_spool() -> None:
-    """独立线程 + 独立连接：库恢复后把 spool 文件按时间顺序补回。"""
+    """独立线程 + 独立连接：库恢复后把 spool 文件补回。
+
+    流式分块，内存 O(chunk) 而不是 O(file)：
+      断网 1 小时 = 360 条/秒 × 3600 ≈ 130 万行 / 160MB，读成整表会直接吃掉内存。
+    崩溃语义：不记游标，从头重读；重复行由主键 (zone_id, drive_id, ts, seq) 挡掉。
+    """
     files = sorted(f for f in os.listdir(SPOOL_DIR) if f.endswith(".ndjson"))
     if not files:
         return
@@ -72,34 +77,36 @@ def replay_spool() -> None:
     try:
         for name in files:
             path = os.path.join(SPOOL_DIR, name)
-            rows = []
+            total = 0
+            chunk: list[tuple] = []
             with open(path, encoding="utf-8") as fh:
-                for line in fh:
-                    ts, zone, drive, speed, current, temp, state, seq = json.loads(line)
-                    rows.append((datetime.fromisoformat(ts), zone, drive, speed, current, temp, state, seq))
-            with conn.cursor() as cur:
-                cur.executemany(INSERT_SQL, rows)
-            conn.commit()
+                for line in fh:  # 逐行：文件对象自己就是游标
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ts, zone, drive, speed, current, temp, state, seq = json.loads(line)
+                    except (ValueError, TypeError):
+                        continue  # 崩溃留下的半行，跳过而不是整批失败
+                    chunk.append((datetime.fromisoformat(ts), zone, drive, speed, current, temp, state, seq))
+                    if len(chunk) >= 500:
+                        with conn.cursor() as cur:
+                            cur.executemany(INSERT_SQL, chunk)
+                        conn.commit()
+                        total += len(chunk)
+                        chunk.clear()
+            if chunk:
+                with conn.cursor() as cur:
+                    cur.executemany(INSERT_SQL, chunk)
+                conn.commit()
+                total += len(chunk)
             os.remove(path)
             with state_lock:
-                stats["spooled"] = max(0, stats["spooled"] - len(rows))
-                stats["rows_written"] += len(rows)
-            print(f"· 补传 {len(rows)} 行（{name}）", flush=True)
+                stats["spooled"] = max(0, stats["spooled"] - total)
+                stats["rows_written"] += total
+            print(f"· 补传 {total} 行（{name}）", flush=True)
     finally:
         conn.close()
-
-
-_conn: psycopg.Connection | None = None
-_conn_lock = threading.Lock()
-
-
-def get_conn(force_new: bool = False) -> psycopg.Connection:
-    """连接断了就重连；重连失败抛给调用方，由调用方落 spool。"""
-    global _conn
-    with _conn_lock:
-        if force_new or _conn is None or _conn.closed:
-            _conn = psycopg.connect(DSN)
-        return _conn
 
 
 def flush() -> int:
