@@ -11,3 +11,6 @@ node_modules/
 deploy/compose/pgdata/
 *.zip
 .DS_Store
+
+# 预览中间产物（preview.mjs 生成）
+docs/design/exports/.preview-*.html
