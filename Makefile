@@ -29,6 +29,12 @@ logs: ## 跟随日志
 ps: ## 容器状态
 	$(COMPOSE) ps
 
+web: ## 前端开发服务器（5174，需先起 ingest/api）
+	cd code/web && npm run dev
+
+tokens: ## 设计色板 -> CSS 变量
+	node scripts/gen-tokens.mjs
+
 sim: ## 10Hz 造数 10 秒（QoS1）
 	.conda-env/bin/python code/simulator/main.py --duration 10 --qos 1
 

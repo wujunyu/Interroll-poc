@@ -1,0 +1,30 @@
+/* 由 scripts/gen-tokens.mjs 从 docs/design/tokens.json 生成，别手改 */
+:root {
+  --c-bg: #0B0F14;
+  --c-panel: #0F1620;
+  --c-card: #131A22;
+  --c-card2: #1B242E;
+  --c-line: #1F2A36;
+  --c-text: #E6EDF3;
+  --c-sub: #8B9AAB;
+  --c-dim: #5C6B7A;
+  --c-ok: #22C55E;
+  --c-warn: #F59E0B;
+  --c-bad: #EF4444;
+  --c-off: #64748B;
+  --c-accent: #38BDF8;
+  --c-brand: #E2001A;
+  --fs-kpi: 28px;
+  --fs-h1: 16px;
+  --fs-h2: 14px;
+  --fs-body: 13px;
+  --fs-label: 12px;
+  --fs-meta: 11px;
+  --r-card: 12px;
+  --r-item: 10px;
+  --r-pill: 14px;
+  --g-unit: 4px;
+  --g-page: 24px;
+  --g-gap: 16px;
+  --font: 'Noto Sans SC', system-ui, sans-serif;
+}

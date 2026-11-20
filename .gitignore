@@ -17,3 +17,6 @@ docs/design/exports/.preview-*.html
 .venv/
 .conda-env/
 .conda-pkgs/
+.npm-cache/
+node_modules/
+dist/
