@@ -31,6 +31,7 @@ make up         # 起全栈（用已构建镜像，不现场 build）
 make ps / logs  # 看状态 / 跟日志
 make rollback TAG=0.3.0   # 切版本重建，等 /healthz 报版本（实测 12s）
 make diag       # 出 dist/interroll-diag-<ts>.zip（脱敏）
+make bundle     # 打离线交付包 dist/interroll-poc-<ver>.tar.gz（镜像+编排+脚本）
 make down       # 停栈，保留数据卷
 make verify     # config + 语法
 ```

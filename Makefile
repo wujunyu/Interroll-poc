@@ -58,6 +58,9 @@ verify: config ## 验收：compose + 脚本语法
 	@python3 -m compileall -q code >/dev/null && echo "✓ python 语法通过"
 	@echo "✓ verify 通过（B 批将追加单元测试与 smoke）"
 
+bundle: ## 打离线交付包（镜像+编排+脚本 → dist/*.tar.gz）
+	bash deploy/scripts/bundle.sh
+
 diag: ## 导出诊断包（B 批）
 	@echo "TODO(B 批): 收集 system/config/logs/mqtt-tail/db-stats → dist/diag-<ts>.zip"
 
