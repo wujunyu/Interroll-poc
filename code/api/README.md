@@ -22,6 +22,7 @@ LTTB 只影响「怎么画」，任何统计口径都不许拿抽样点算。
 | GET | `/api/zones` | 六区：驱动数、在线数、平均速度、最后时间 |
 | GET | `/api/series?zone=Z1&drive=D01&window=60s` | `window ∈ 60s/5m/1h/6h/24h` |
 | WS | `/ws/live` | 每 100ms 一帧，36 个点 + 累计帧数 |
+| GET | `/api/alerts` | 活动告警 + 最近历史 + 当前规则参数 |
 
 WS 帧：
 
@@ -29,6 +30,22 @@ WS 帧：
 {"ts":"2026-11-20T22:31:48.015+08:00","frames":4320,
  "points":[{"zone":"Z1","drive":"D01","speed_mps":0.74,"current_a":2.84,"temp_c":42.4,"state":"running"}]}
 ```
+
+## 告警去抖（FR-09）
+
+`alerts.py` 是纯状态机：每个 `(设备, 规则)` 独立走 `pending → firing → resolved`。
+
+- 条件不满 `for_seconds`（默认 30s）→ 只 pending，不报；
+- 持续够了 → 报一条；
+- 条件消失 → resolved，状态清零，下次重新计时；
+- 离线规则靠 `sweep()`（每秒扫一次最后见到时间），设备不发消息也能报。
+
+规则模板**不能用未提供的占位符**（`{for_s}` 这种会让 `format()` 抛 KeyError）。
+这个坑真实发生过：异常把 paho 的接收线程整个带走了，告警一条都没出来。
+现在 `on_message` 和 `_emit` 都做了兜底。
+
+验收脚本：`scripts/test_alerts.py`（3 秒抖动不报 / 35 秒持续报一条 / 恢复 resolved）。
+联调脚本：`scripts/inject_alert.py`（往 Z1/D01 注入过流）。
 
 ## 跑起来
 

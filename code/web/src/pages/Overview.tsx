@@ -3,6 +3,9 @@ import { Chart } from '../components/Chart'
 import { useHistory, usePoll } from '../lib/api'
 import type { Health, Point, Zone } from '../lib/api'
 
+type AlertItem = { id: string; zone: string; drive: string; rule: string; level: string; state: string; since: string; message: string }
+type AlertsPayload = { active: AlertItem[]; history: AlertItem[]; rules: { for_seconds: number; offline_seconds: number } }
+
 type Props = { live: Point[]; health: Health | null; onOpen: (zone: string, drive: string) => void }
 
 const STATE_COLOR: Record<string, string> = { run: 'var(--c-ok)', warn: 'var(--c-warn)', off: 'var(--c-off)' }
@@ -15,6 +18,7 @@ function zoneState(z: Zone): 'run' | 'warn' | 'off' {
 
 export function Overview({ live, health, onOpen }: Props) {
   const [zones] = usePoll<Zone[]>('/api/zones', 2000)
+  const [alerts] = usePoll<AlertsPayload>('/api/alerts', 2000)
 
   const kpi = useMemo(() => {
     const list = zones ?? []
@@ -96,10 +100,23 @@ export function Overview({ live, health, onOpen }: Props) {
         </div>
 
         <div className="card panel">
-          <div className="panel-hd"><span>告警 · 0</span><span className="dim">最近 5 分钟</span></div>
+          <div className="panel-hd">
+            <span>告警 · {alerts?.active.length ?? 0}</span>
+            <span className="dim">去抖 {alerts?.rules.for_seconds ?? 30}s · 离线 {alerts?.rules.offline_seconds ?? 15}s</span>
+          </div>
           <div className="alerts">
-            <div className="alert-item"><div className="dim">规则尚未实现（P5 之后）</div></div>
-            <div className="alert-item"><div className="dim">当前没有触发中的告警</div></div>
+            {(alerts?.active ?? []).map((a) => (
+              <div key={a.id} className={`alert-item lv-${a.level}`}>
+                <div className="dim">{a.since} · {a.zone}/{a.drive} · {a.rule}</div>
+                <div>{a.message}</div>
+              </div>
+            ))}
+            {!alerts?.active.length && (
+              <div className="alert-item"><div className="dim">当前没有触发中的告警（抖动不满 {alerts?.rules.for_seconds ?? 30}s 不会报）</div></div>
+            )}
+            {(alerts?.history ?? []).filter((h) => h.state === 'resolved').slice(-3).reverse().map((h) => (
+              <div key={h.id} className="alert-item lv-resolved"><div className="dim">{h.since} · 已恢复 · {h.rule}</div></div>
+            ))}
           </div>
         </div>
       </section>

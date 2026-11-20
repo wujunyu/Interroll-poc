@@ -22,6 +22,8 @@ import paho.mqtt.client as mqtt
 import psycopg
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+
+from alerts import AlertEngine, Rule
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 
@@ -34,6 +36,18 @@ TOPIC = os.environ.get("MQTT_TOPIC", "line/#")
 WS_FPS = float(os.environ.get("WS_FPS", "10"))
 VERSION = os.environ.get("APP_VERSION", "dev")
 PORT = int(os.environ.get("API_PORT", "8000"))
+ALERT_FOR = float(os.environ.get("ALERT_FOR_SECONDS", "30"))
+ALERT_OFFLINE = float(os.environ.get("ALERT_OFFLINE_SECONDS", "15"))
+
+engine = AlertEngine(
+    rules=[
+        Rule("电流过载", "current_a", float(os.environ.get("ALERT_CURRENT", "4.0")), "gt",
+             ALERT_FOR, "critical", "{zone}/{drive} 电流 {value}A 超限"),
+        Rule("速度掉零", "speed_mps", 0.05, "lt", ALERT_FOR, "warning",
+             "{zone}/{drive} 速度 {value} m/s，疑似堵料"),
+    ],
+    offline_seconds=ALERT_OFFLINE,
+)
 
 WINDOWS = {"60s": 60, "5m": 300, "1h": 3600, "6h": 21600, "24h": 86400}
 
@@ -62,6 +76,11 @@ def on_message(client, userdata, msg) -> None:
         p = json.loads(msg.payload)
     except ValueError:
         return
+    try:
+        for alert in engine.update(p):
+            print(f"· [alert] {alert.state} {alert.message}", flush=True)
+    except Exception as exc:  # 规则写错不能把 MQTT 线程带走
+        print(f"! [alert] 规则执行失败：{exc}", flush=True)
     with live_lock:
         live[(p["zone"], p["drive"])] = {
             "zone": p["zone"], "drive": p["drive"],
@@ -192,6 +211,13 @@ def series(
             "points": pts, "point_count": len(pts), "raw_count": before}
 
 
+@app.get("/api/alerts")
+def alerts(limit: int = Query(20, ge=1, le=200)) -> dict[str, Any]:
+    """活动告警 + 最近历史。规则见 alerts.py（30 秒去抖，抖动不报）。"""
+    return {"active": engine.active(), "history": engine.history(limit),
+            "rules": {"for_seconds": ALERT_FOR, "offline_seconds": ALERT_OFFLINE}}
+
+
 @app.websocket("/ws/live")
 async def ws_live(ws: WebSocket) -> None:
     await ws.accept()
@@ -212,7 +238,19 @@ async def ws_live(ws: WebSocket) -> None:
         return
 
 
+def sweeper() -> None:
+    """离线规则靠扫：设备不再发消息时，update() 不会被调用。"""
+    while True:
+        time.sleep(1.0)
+        try:
+            for alert in engine.sweep():
+                print(f"· [alert] {alert.state} {alert.message}", flush=True)
+        except Exception as exc:
+            print(f"! [alert] sweep 失败：{exc}", flush=True)
+
+
 def main() -> int:
+    threading.Thread(target=sweeper, daemon=True).start()
     start_mqtt()
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
     return 0
