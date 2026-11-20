@@ -1,0 +1,79 @@
+# 基础编排：边缘单机五件套。端口全部走 .env，避开宿主已占的 1883/5432/8000。
+# 路径相对本文件：../../code/* 即仓库根的 code/*。
+name: ${COMPOSE_PROJECT_NAME:-interroll-poc}
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1884}:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -p 1883 -t '$$SYS/#' -C 1 -W 2 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: timescale/timescaledb:latest-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-poc}
+      POSTGRES_USER: ${DB_USER:-poc}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 设置 DB_PASSWORD（make env 可生成）}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../db/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-poc} -d ${DB_NAME:-poc}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ingest:
+    build: ../../code/ingest
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      DB_DSN: postgresql://${DB_USER:-poc}:${DB_PASSWORD}@db:5432/${DB_NAME:-poc}
+    depends_on:
+      db: { condition: service_healthy }
+      mqtt: { condition: service_started }
+
+  api:
+    build: ../../code/api
+    restart: unless-stopped
+    environment:
+      DB_DSN: postgresql://${DB_USER:-poc}:${DB_PASSWORD}@db:5432/${DB_NAME:-poc}
+    ports:
+      - "${API_PORT:-8001}:8000"
+    depends_on:
+      db: { condition: service_healthy }
+
+  web:
+    build: ../../code/web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-5174}:80"
+    depends_on:
+      - api
+
+  # 只在开发/演示时开：docker compose --profile demo up -d simulator
+  simulator:
+    build: ../../code/simulator
+    profiles: ["demo"]
+    environment:
+      MQTT_HOST: mqtt
+      SAMPLE_HZ: ${SAMPLE_HZ:-10}
+      ZONES: ${ZONES:-6}
+      DRIVES_PER_ZONE: ${DRIVES_PER_ZONE:-6}
+    depends_on:
+      mqtt: { condition: service_started }
+
+volumes:
+  pgdata:

@@ -1,0 +1,50 @@
+-- TimescaleDB 初始化：超表 / 连续聚合 / 保留策略 / 压缩
+-- 只跑一次（docker-entrypoint-initdb.d），改这里要 `make clean` 重来。
+
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+-- 原始点：每秒 360 行（36 驱动 × 10Hz），这是 PoC 的量级
+CREATE TABLE IF NOT EXISTS telemetry (
+    ts          timestamptz      NOT NULL,
+    zone_id     text             NOT NULL,
+    drive_id    text             NOT NULL,
+    speed_mps   double precision,
+    current_a   double precision,
+    temp_c      double precision,
+    state       text,
+    seq         bigint           NOT NULL,   -- 设备侧自增，补传去重用
+    PRIMARY KEY (drive_id, ts)
+);
+
+SELECT create_hypertable('telemetry', 'ts', chunk_time_interval => INTERVAL '1 hour', if_not_exists => TRUE);
+
+-- 幂等键：断网补传同一批不会写两遍
+CREATE UNIQUE INDEX IF NOT EXISTS ux_telemetry_idem ON telemetry (drive_id, ts, seq);
+
+-- 1 分钟聚合：看板长窗口只查这里
+CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry_1m
+WITH (timescaledb.continuous) AS
+SELECT time_bucket('1 minute', ts) AS bucket,
+       zone_id,
+       drive_id,
+       avg(speed_mps)   AS speed_avg,
+       max(current_a)   AS current_max,
+       avg(temp_c)      AS temp_avg,
+       count(*)         AS samples
+FROM telemetry
+GROUP BY bucket, zone_id, drive_id
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('telemetry_1m',
+       start_offset => INTERVAL '3 days',
+       end_offset   => INTERVAL '1 minute',
+       schedule_interval => INTERVAL '1 minute',
+       if_not_exists => TRUE);
+
+-- 保留：原始 7 天、聚合 90 天
+SELECT add_retention_policy('telemetry',    INTERVAL '7 days',  if_not_exists => TRUE);
+SELECT add_retention_policy('telemetry_1m', INTERVAL '90 days', if_not_exists => TRUE);
+
+-- 压缩：7 天前的块
+ALTER TABLE telemetry SET (timescaledb.compress, timescaledb.compress_segmentby = 'drive_id');
+SELECT add_compression_policy('telemetry', INTERVAL '7 days', if_not_exists => TRUE);

@@ -1,0 +1,23 @@
+# Podman quadlet：现场开机自启（放到 /etc/containers/systemd/）
+# 与 compose 的区别：没有 daemon，systemd 直接管生命周期。
+[Unit]
+Description=Interroll PoC ingest
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/interroll-poc-ingest:latest
+ContainerName=interroll-ingest
+Environment=MQTT_HOST=127.0.0.1
+EnvironmentFile=/etc/interroll-poc/env
+# 现场断网也要能起：不依赖外网镜像
+Pull=never
+AutoUpdate=registry
+Volume=/var/lib/interroll-poc/spool:/var/spool/ingest:Z
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

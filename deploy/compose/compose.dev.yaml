@@ -1,0 +1,24 @@
+# 开发覆盖：热重载、端口外露、日志跟手。
+# 用法：docker compose -f deploy/compose/compose.yaml -f deploy/compose/compose.dev.yaml up -d
+services:
+  ingest:
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../code/ingest:/app:ro
+  api:
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ../../code/api:/app:ro
+  web:
+    # 开发用 Vite dev server，不走 nginx 静态包
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_BASE: http://localhost:${API_PORT:-8001}
+    ports:
+      - "${WEB_PORT:-5174}:5173"
+    volumes:
+      - ../../code/web:/app
