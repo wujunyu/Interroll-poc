@@ -109,6 +109,19 @@ def replay_spool() -> None:
         conn.close()
 
 
+_conn: psycopg.Connection | None = None
+_conn_lock = threading.Lock()
+
+
+def get_conn(force_new: bool = False) -> psycopg.Connection:
+    """连接断了就重连；重连失败抛给调用方，由调用方落 spool。"""
+    global _conn
+    with _conn_lock:
+        if force_new or _conn is None or _conn.closed:
+            _conn = psycopg.connect(DSN)
+        return _conn
+
+
 def flush() -> int:
     with state_lock:
         if not buffer:

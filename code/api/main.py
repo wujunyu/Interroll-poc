@@ -1,0 +1,222 @@
+"""api：REST 查历史 + WebSocket 推实时（10fps 节流）。
+
+分工：
+- 历史走库：≤5 分钟查原始点，更长查 1 分钟连续聚合（ADR-0003）；
+- 实时走 MQTT：API 自己订一份，避免每帧回查数据库；
+- 点数超过 1000 时上 LTTB，只影响「怎么画」，不影响任何统计口径。
+
+    DB_DSN=... MQTT_HOST=127.0.0.1 MQTT_PORT=1883 MQTT_USERNAME=poc MQTT_PASSWORD=poc_dev_pw \
+    .conda-env/bin/python code/api/main.py
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+import paho.mqtt.client as mqtt
+import psycopg
+import uvicorn
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from psycopg.rows import dict_row
+
+DSN = os.environ["DB_DSN"]
+MQTT_HOST = os.environ.get("MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+MQTT_USERNAME = os.environ.get("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "")
+TOPIC = os.environ.get("MQTT_TOPIC", "line/#")
+WS_FPS = float(os.environ.get("WS_FPS", "10"))
+VERSION = os.environ.get("APP_VERSION", "dev")
+PORT = int(os.environ.get("API_PORT", "8000"))
+
+WINDOWS = {"60s": 60, "5m": 300, "1h": 3600, "6h": 21600, "24h": 86400}
+
+app = FastAPI(title="Interroll PoC API", version=VERSION)
+app.add_middleware(
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+)
+
+# ---- 实时缓存：paho 线程写，事件循环读 ----
+live_lock = threading.Lock()
+live: dict[tuple[str, str], dict[str, Any]] = {}
+live_meta = {"connected": False, "frames": 0, "last_ts": None}
+
+
+def on_connect(client, userdata, flags, reason_code, properties=None) -> None:
+    live_meta["connected"] = True
+    client.subscribe(TOPIC, qos=1)
+
+
+def on_disconnect(client, userdata, flags, reason_code, properties=None) -> None:
+    live_meta["connected"] = False
+
+
+def on_message(client, userdata, msg) -> None:
+    try:
+        p = json.loads(msg.payload)
+    except ValueError:
+        return
+    with live_lock:
+        live[(p["zone"], p["drive"])] = {
+            "zone": p["zone"], "drive": p["drive"],
+            "speed_mps": p.get("speed_mps"), "current_a": p.get("current_a"),
+            "temp_c": p.get("temp_c"), "state": p.get("state"), "ts": p["ts"],
+        }
+        live_meta["frames"] += 1
+        live_meta["last_ts"] = p["ts"]
+
+
+def start_mqtt() -> None:
+    cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"api-{os.getpid()}")
+    cli.on_connect, cli.on_disconnect, cli.on_message = on_connect, on_disconnect, on_message
+    if MQTT_USERNAME:
+        cli.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    cli.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+    cli.loop_start()
+
+
+def db() -> psycopg.Connection:
+    return psycopg.connect(DSN, row_factory=dict_row)
+
+
+def lttb(points: list[dict[str, Any]], threshold: int = 1000, x: str = "ts", y: str = "speed_mps") -> list[dict[str, Any]]:
+    """Largest-Triangle-Three-Buckets：保形状的抽稀，只用于画线。"""
+    n = len(points)
+    if n <= threshold or threshold < 3:
+        return points
+    sampled = [points[0]]
+    every = (n - 2) / (threshold - 2)
+    a = 0
+    for i in range(threshold - 2):
+        start = int((i + 1) * every) + 1
+        end = int((i + 2) * every) + 1
+        end = min(end, n)
+        avg_x = avg_y = 0.0
+        for j in range(start, end):
+            avg_x += points[j][x].timestamp()
+            avg_y += points[j][y]
+        span = max(1, end - start)
+        avg_x /= span
+        avg_y /= span
+        ax, ay = points[a][x].timestamp(), points[a][y]
+        best, best_area = start, -1.0
+        for j in range(start, end):
+            area = abs((ax - avg_x) * (points[j][y] - ay) - (ax - points[j][x].timestamp()) * (avg_y - ay)) / 2
+            if area > best_area:
+                best, best_area = j, area
+        sampled.append(points[best])
+        a = best
+    sampled.append(points[-1])
+    return sampled
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "ok": True,
+        "version": VERSION,
+        "mqtt": {"connected": live_meta["connected"], "frames": live_meta["frames"], "last_ts": live_meta["last_ts"]},
+        "ws_fps": WS_FPS,
+    }
+    try:
+        with db() as conn, conn.cursor() as cur:
+            cur.execute("select max(ts) as wm from telemetry")
+            out["db"] = {"ok": True, "watermark": cur.fetchone()["wm"]}
+    except Exception as exc:
+        out["ok"] = False
+        out["db"] = {"ok": False, "error": str(exc)[:120]}
+    return out
+
+
+@app.get("/api/zones")
+def zones() -> list[dict[str, Any]]:
+    """六区当前状态：在线驱动数、平均速度、最近 1 分钟吞吐。"""
+    sql = """
+    WITH recent AS (
+        SELECT zone_id, drive_id, max(ts) AS last_ts, avg(speed_mps) AS v
+        FROM telemetry
+        WHERE ts > now() - interval '60 seconds'
+        GROUP BY zone_id, drive_id
+    )
+    SELECT zone_id,
+           count(*)                                   AS drives,
+           count(*) FILTER (WHERE v > 0.05)           AS online,
+           round(avg(v)::numeric, 3)                  AS speed_avg,
+           max(last_ts)                               AS last_ts
+    FROM recent
+    GROUP BY zone_id
+    ORDER BY zone_id
+    """
+    with db() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+    return [{"zone": r["zone_id"], "drives": r["drives"], "online": r["online"],
+             "speed_avg": float(r["speed_avg"] or 0), "last_ts": r["last_ts"]} for r in rows]
+
+
+@app.get("/api/series")
+def series(
+    zone: str = Query(..., min_length=1),
+    drive: str = Query(..., min_length=1),
+    window: str = Query("60s", pattern="^(60s|5m|1h|6h|24h)$"),
+) -> dict[str, Any]:
+    seconds = WINDOWS[window]
+    use_raw = seconds <= 300
+    with db() as conn, conn.cursor() as cur:
+        if use_raw:
+            cur.execute(
+                """SELECT ts, speed_mps, current_a, temp_c FROM telemetry
+                   WHERE zone_id=%s AND drive_id=%s AND ts > now() - make_interval(secs => %s)
+                   ORDER BY ts""", (zone, drive, seconds))
+            pts = [{"ts": r["ts"], "speed_mps": r["speed_mps"], "current_a": r["current_a"], "temp_c": r["temp_c"]} for r in cur.fetchall()]
+            source = "raw"
+        else:
+            cur.execute(
+                """SELECT bucket AS ts, speed_avg AS speed_mps, current_max AS current_a
+                   FROM telemetry_1m
+                   WHERE zone_id=%s AND drive_id=%s AND bucket > now() - make_interval(secs => %s)
+                   ORDER BY bucket""", (zone, drive, seconds))
+            pts = [{"ts": r["ts"], "speed_mps": float(r["speed_mps"] or 0), "current_a": float(r["current_a"] or 0)} for r in cur.fetchall()]
+            source = "1m-agg"
+    if not pts:
+        raise HTTPException(status_code=404, detail=f"{zone}/{drive} 在 {window} 内没有数据")
+    before = len(pts)
+    pts = lttb(pts)
+    return {"zone": zone, "drive": drive, "window": window, "source": source,
+            "points": pts, "point_count": len(pts), "raw_count": before}
+
+
+@app.websocket("/ws/live")
+async def ws_live(ws: WebSocket) -> None:
+    await ws.accept()
+    interval = 1.0 / WS_FPS
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            with live_lock:
+                snapshot = list(live.values())
+                frames = live_meta["frames"]
+            if not snapshot:
+                await ws.send_json({"ts": datetime.now(timezone.utc).isoformat(), "points": []})
+                continue
+            # 按 (zone, drive) 排序，前端好做 diff
+            snapshot.sort(key=lambda p: (p["zone"], p["drive"]))
+            await ws.send_json({"ts": snapshot[-1]["ts"], "frames": frames, "points": snapshot})
+    except WebSocketDisconnect:
+        return
+
+
+def main() -> int:
+    start_mqtt()
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
