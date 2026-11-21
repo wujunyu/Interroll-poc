@@ -1,8 +1,8 @@
-"""ingest：MQTT 订阅 → 批量写 TimescaleDB。
+"""ingest：MQTT 订阅 → 预写日志 → 批量写 TimescaleDB。
 
-- 攒够 BATCH_ROWS 或到 BATCH_SECONDS 就刷一次；
+- 每条先追加 WAL（fsync 后才入库），攒够 BATCH_ROWS 或到 BATCH_SECONDS 刷一次；
 - 幂等键 (drive_id, ts, seq) 冲突即忽略，重放不增行；
-- 自带 /healthz（默认 8091）报告 lag_seconds / spool_rows / last_ts / rows。
+- 自带 /healthz（默认 8091）报告 lag_seconds / wal_pending_bytes / last_ts / rows。
 
     DB_DSN=postgresql://poc:poc_dev_pw@127.0.0.1:5437/interroll_poc \
     MQTT_HOST=127.0.0.1 MQTT_PORT=1884 python code/ingest/main.py
@@ -34,8 +34,8 @@ TOPIC = os.environ.get("MQTT_TOPIC", "line/#")
 BATCH_ROWS = int(os.environ.get("BATCH_ROWS", "200"))
 BATCH_SECONDS = float(os.environ.get("BATCH_SECONDS", "1.0"))
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8091"))
-SPOOL_DIR = os.environ.get("SPOOL_DIR", "/tmp/interroll-ingest-spool")
-os.makedirs(SPOOL_DIR, exist_ok=True)
+WAL_DIR = os.environ.get("WAL_DIR", "/tmp/interroll-ingest-wal")
+os.makedirs(WAL_DIR, exist_ok=True)
 
 INSERT_SQL = """
 INSERT INTO telemetry (ts, zone_id, drive_id, speed_mps, current_a, temp_c, state, seq)
@@ -43,21 +43,13 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (zone_id, drive_id, ts, seq) DO NOTHING
 """
 
-state_lock = threading.Lock()
+state_lock = threading.Lock()          # 保护 buffer 与 WAL 追加的原子性
+flush_lock = threading.Lock()          # flush 与 replay 互斥，避免重复/竞争
 buffer: list[tuple] = []
-stats = {"rows_written": 0, "last_ts": None, "last_flush": 0.0, "batches": 0, "spooled": 0}
-
-
-def spool_rows(rows: list[tuple]) -> None:
-    """写库失败时兜底：整批落本地文件，等库恢复再补。"""
-    path = os.path.join(SPOOL_DIR, f"{int(time.time() * 1000)}.ndjson")
-    with open(path, "w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps([row[0].isoformat(), *row[1:]], ensure_ascii=False) + "\n")
-    with state_lock:
-        stats["spooled"] += len(rows)
-    log.warning("flush failed, spooled", extra={"rows": len(rows), "detail": path})
-
+stats = {"rows_written": 0, "last_ts": None, "last_flush": 0.0, "batches": 0,
+         "wal_pending_bytes": 0, "wal_committed": 0,
+         "replay_tick": 0.0, "last_frame": 0.0}
+_replay_thread: threading.Thread | None = None
 
 def event(conn: psycopg.Connection, kind: str, severity: str = "info", **detail) -> None:
     """关键事件写库（不是日志流水）：启动/断库/恢复/补传完成。写失败不影响数据面。"""
@@ -72,60 +64,129 @@ def event(conn: psycopg.Connection, kind: str, severity: str = "info", **detail)
         pass
 
 
-def spool_pending() -> int:
-    n = 0
-    for name in os.listdir(SPOOL_DIR):
-        if name.endswith(".ndjson"):
-            with open(os.path.join(SPOOL_DIR, name), encoding="utf-8") as fh:
-                n += sum(1 for _ in fh)
-    return n
+WAL_PATH = os.path.join(WAL_DIR, "wal.ndjson")
+WAL_COMMIT_PATH = os.path.join(WAL_DIR, "wal.commit")
+wal_fh = None
+wal_committed_bytes = 0
 
 
-def replay_spool() -> None:
-    """独立线程 + 独立连接：库恢复后把 spool 文件补回。
+def wal_open() -> None:
+    """打开预写日志，读取上次提交到的字节偏移。"""
+    global wal_fh, wal_committed_bytes
+    os.makedirs(WAL_DIR, exist_ok=True)
+    wal_committed_bytes = 0
+    if os.path.exists(WAL_COMMIT_PATH):
+        try:
+            wal_committed_bytes = int(open(WAL_COMMIT_PATH, encoding="utf-8").read().strip() or 0)
+        except ValueError:
+            wal_committed_bytes = 0
+    wal_fh = open(WAL_PATH, "ab", buffering=0)   # 无缓冲：写入即进 page cache
+    stats["wal_committed"] = wal_committed_bytes
+    log.info("wal opened", extra={"detail": f"committed={wal_committed_bytes}B"})
 
-    流式分块，内存 O(chunk) 而不是 O(file)：
-      断网 1 小时 = 360 条/秒 × 3600 ≈ 130 万行 / 160MB，读成整表会直接吃掉内存。
-    崩溃语义：不记游标，从头重读；重复行由主键 (zone_id, drive_id, ts, seq) 挡掉。
-    """
-    files = sorted(f for f in os.listdir(SPOOL_DIR) if f.endswith(".ndjson"))
-    if not files:
-        return
-    conn = psycopg.connect(DSN)
+
+def wal_append(line: str) -> None:
+    """调用方必须持 state_lock：WAL 追加与 buffer 追加是同一个原子动作。"""
+    wal_fh.write(line.encode())
+
+
+def wal_sync() -> None:
+    wal_fh.flush()
+    os.fsync(wal_fh.fileno())
+
+
+def wal_commit(offset: int) -> None:
+    """把提交游标推进到 offset：之前的行已经落库，崩溃后不再重放。只许前进。"""
+    global wal_committed_bytes
+    offset = max(offset, wal_committed_bytes)
+    with open(WAL_COMMIT_PATH, "w", encoding="utf-8") as f:
+        f.write(str(offset))
+        f.flush()
+        os.fsync(f.fileno())
+    wal_committed_bytes = offset
+    stats["wal_committed"] = offset
+
+
+def wal_pending() -> int:
     try:
-        for name in files:
-            path = os.path.join(SPOOL_DIR, name)
-            total = 0
-            chunk: list[tuple] = []
-            with open(path, encoding="utf-8") as fh:
-                for line in fh:  # 逐行：文件对象自己就是游标
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ts, zone, drive, speed, current, temp, state, seq = json.loads(line)
-                    except (ValueError, TypeError):
-                        continue  # 崩溃留下的半行，跳过而不是整批失败
-                    chunk.append((datetime.fromisoformat(ts), zone, drive, speed, current, temp, state, seq))
+        return max(0, os.path.getsize(WAL_PATH) - wal_committed_bytes)
+    except OSError:
+        return 0
+
+
+def wal_replay() -> int:
+    """从提交游标回放未提交的尾部（崩溃恢复 / 库恢复都走这条）。"""
+    with flush_lock:
+        try:
+            size = os.path.getsize(WAL_PATH)
+        except OSError:
+            return 0
+        if size <= wal_committed_bytes:
+            return 0
+        total = 0
+        offset = wal_committed_bytes
+        conn = psycopg.connect(DSN)
+        try:
+            with open(WAL_PATH, "rb") as fh:
+                fh.seek(wal_committed_bytes)
+                chunk: list[tuple] = []
+                for raw in fh:
+                    offset += len(raw)
+                    if raw.strip():
+                        try:
+                            ts, zone, drive, speed, current, temp, state, seq = json.loads(raw)
+                            chunk.append((datetime.fromisoformat(ts), zone, drive, speed, current, temp, state, seq))
+                        except (ValueError, TypeError):
+                            continue          # 崩溃留下的半行，跳过
                     if len(chunk) >= 500:
                         with conn.cursor() as cur:
                             cur.executemany(INSERT_SQL, chunk)
                         conn.commit()
+                        wal_commit(offset)
                         total += len(chunk)
                         chunk.clear()
-            if chunk:
-                with conn.cursor() as cur:
-                    cur.executemany(INSERT_SQL, chunk)
-                conn.commit()
-                total += len(chunk)
-            os.remove(path)
+                if chunk:
+                    with conn.cursor() as cur:
+                        cur.executemany(INSERT_SQL, chunk)
+                    conn.commit()
+                    wal_commit(offset)
+                    total += len(chunk)
+        finally:
+            conn.close()
+        if total:
             with state_lock:
-                stats["spooled"] = max(0, stats["spooled"] - total)
                 stats["rows_written"] += total
-            log.info("spool replayed", extra={"rows": total, "detail": name})
-            event(conn, "spool_replayed", rows=total, file=name)
-    finally:
-        conn.close()
+            log.info("wal replayed", extra={"rows": total})
+            try:
+                event(psycopg.connect(DSN), "wal_replayed", rows=total)
+            except Exception:
+                pass
+        return total
+
+
+def wal_compact(threshold: int = 64 * 1024 * 1024) -> None:
+    """已提交部分超过阈值就把文件重写一遍，只留未提交尾部。"""
+    global wal_fh
+    if wal_committed_bytes < threshold:
+        return
+    with state_lock:
+        keep = b""
+        try:
+            size = os.path.getsize(WAL_PATH)
+            if size > wal_committed_bytes:
+                with open(WAL_PATH, "rb") as fh:
+                    fh.seek(wal_committed_bytes)
+                    keep = fh.read()
+        except OSError:
+            return
+        wal_fh.close()
+        with open(WAL_PATH, "wb") as fh:
+            fh.write(keep)
+            fh.flush()
+            os.fsync(fh.fileno())
+        wal_fh = open(WAL_PATH, "ab", buffering=0)
+    wal_commit(len(keep))
+    log.info("wal compacted", extra={"detail": f"keep={len(keep)}B"})
 
 
 _conn: psycopg.Connection | None = None
@@ -134,7 +195,7 @@ _db_down = False   # 用于在恢复时补一条事件，而不是在断库时�
 
 
 def get_conn(force_new: bool = False) -> psycopg.Connection:
-    """连接断了就重连；重连失败抛给调用方，由调用方落 spool。"""
+    """连接断了就重连；重连失败抛给调用方，由调用方保留 WAL 不推进游标。"""
     global _conn
     with _conn_lock:
         if force_new or _conn is None or _conn.closed:
@@ -143,35 +204,40 @@ def get_conn(force_new: bool = False) -> psycopg.Connection:
 
 
 def flush() -> int:
-    with state_lock:
-        if not buffer:
-            return 0
-        rows, buffer[:] = list(buffer), []
-    global _db_down
-    try:
-        conn = get_conn()
-        with conn.cursor() as cur:
-            cur.executemany(INSERT_SQL, rows)
-        conn.commit()
-        if _db_down:
-            _db_down = False
-            event(conn, "db_recovered", "warning")
-    except Exception as exc:  # 库挂了：不丢数据，整批落 spool
+    with flush_lock:
+        with state_lock:
+            if not buffer:
+                return 0
+            rows, buffer[:] = list(buffer), []
+            end = wal_fh.tell()          # 这批数据在 WAL 中的结束偏移
+        global _db_down
+        conn = None
         try:
-            if conn is not None:
-                conn.rollback()
-        except Exception:
-            pass
-        spool_rows(rows)
-        _db_down = True
-        log.error("flush failed", extra={"detail": str(exc)[:200]})
-        return 0
-    with state_lock:
-        stats["rows_written"] += len(rows)
-        stats["batches"] += 1
-        stats["last_flush"] = time.time()
-        stats["last_ts"] = rows[-1][0]
-    log.debug("flush", extra={"rows": len(rows)})
+            wal_sync()                   # ① 先落盘（write-ahead）
+            conn = get_conn()
+            with conn.cursor() as cur:
+                cur.executemany(INSERT_SQL, rows)
+            conn.commit()                # ② 再入库
+            wal_commit(end)              # ③ 最后推进游标
+            if _db_down:
+                _db_down = False
+                event(conn, "db_recovered", "warning")
+        except Exception as exc:         # 库挂了：不推进游标，WAL 就是缓冲
+            try:
+                if conn is not None:
+                    conn.rollback()
+            except Exception:
+                pass
+            _db_down = True
+            log.error("flush failed, kept in WAL", extra={"detail": str(exc)[:200]})
+            return 0
+        with state_lock:
+            stats["rows_written"] += len(rows)
+            stats["batches"] += 1
+            stats["last_flush"] = time.time()
+            stats["last_ts"] = rows[-1][0]
+        log.debug("flush", extra={"rows": len(rows)})
+    wal_compact()
     return len(rows)
 
 
@@ -190,8 +256,11 @@ def on_message(client, userdata, msg) -> None:
         )
     except Exception:
         return
+    line = json.dumps([row[0].isoformat(), *row[1:]], ensure_ascii=False) + "\n"
     with state_lock:
+        wal_append(line)
         buffer.append(row)
+        stats["last_frame"] = time.time()
 
 
 class Health(BaseHTTPRequestHandler):
@@ -214,7 +283,10 @@ class Health(BaseHTTPRequestHandler):
             "version": os.environ.get("APP_VERSION", "dev"),
             "rows_written": written,
             "pending_in_buffer": pending,
-            "spool_rows": spool_pending(),
+            "wal_pending_bytes": wal_pending(),
+            "replay_thread_alive": bool(_replay_thread and _replay_thread.is_alive()),
+            "replay_tick_age_s": round(time.time() - stats["replay_tick"], 1) if stats["replay_tick"] else None,
+            "frame_age_s": round(time.time() - stats["last_frame"], 1) if stats["last_frame"] else None,
             "lag_seconds": lag,
             "batches": stats["batches"],
         }, ensure_ascii=False).encode()
@@ -235,6 +307,13 @@ def _on_sigterm(signum, frame):  # docker stop / systemd stop 发的是 SIGTERM
 def main() -> int:
     global _conn
     signal.signal(signal.SIGTERM, _on_sigterm)
+    wal_open()
+    try:
+        replayed = wal_replay()
+        if replayed:
+            log.info("crash tail recovered", extra={"rows": replayed})
+    except Exception as exc:
+        log.error("wal replay at startup failed", extra={"detail": str(exc)[:200]})
     get_conn(force_new=True)
     conn = _conn
     with conn.cursor() as cur:
@@ -276,12 +355,17 @@ def main() -> int:
     def replay_loop() -> None:
         while True:
             time.sleep(2.0)
+            stats["replay_tick"] = time.time()
+            if not _db_down:
+                continue          # 正常运行时由 flush 推进游标，回放只在库故障时接管
             try:
-                replay_spool()
+                wal_replay()
             except Exception:
-                pass  # 库还没好，下一轮再试
+                pass              # 库还没好，下一轮再试
 
-    threading.Thread(target=replay_loop, daemon=True).start()
+    global _replay_thread
+    _replay_thread = threading.Thread(target=replay_loop, daemon=True)
+    _replay_thread.start()
 
     last_flush = time.time()
     try:
@@ -295,6 +379,11 @@ def main() -> int:
             if due_rows or due_time:
                 flush()
                 last_flush = time.time()
+            # 看门狗：daemon 线程异常退出不会影响进程，必须主动发现并重启
+            if _replay_thread is not None and not _replay_thread.is_alive():
+                log.error("replay thread died, restarting")
+                _replay_thread = threading.Thread(target=replay_loop, daemon=True)
+                _replay_thread.start()
     except KeyboardInterrupt:
         flush()
         try:
