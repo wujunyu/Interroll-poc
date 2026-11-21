@@ -55,6 +55,14 @@ select hypertable_name, pg_size_pretty(hypertable_size(format('%I', hypertable_n
 from timescaledb_information.hypertables;
 SQL
 
+echo "[diag] 采集 MQTT 指标 (\$SYS)"
+{
+  for t in clients/connected clients/maximum clients/total messages/received messages/sent publish/messages/dropped load/connections/1min; do
+    v=$($ENGINE exec interroll-poc-mqtt-1 mosquitto_sub -h 127.0.0.1 -t "\$SYS/broker/$t" -C 1 -W 3 2>/dev/null | tail -1)
+    printf '%-28s %s\n' "$t" "${v:-n/a}"
+  done
+} > "$PKG/mqtt-sys.txt" 2>&1 || echo "mqtt 指标不可读" > "$PKG/mqtt-sys.txt"
+
 echo "[diag] 导出事件时间线（最近 200 条）"
 $ENGINE exec -i -e PGPASSWORD="$(grep -E '^DB_PASSWORD=' "$ROOT/.env" | cut -d= -f2)" \
   interroll-poc-db-1 psql -U "$(grep -E '^DB_USER=' "$ROOT/.env" | cut -d= -f2)" \

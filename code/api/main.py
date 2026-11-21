@@ -64,12 +64,13 @@ app.add_middleware(
 live_lock = threading.Lock()
 live: dict[tuple[str, str], dict[str, Any]] = {}
 live_ts: dict[tuple[str, str], tuple[datetime, int]] = {}   # (事件时间, seq) 游标
+mqtt_sys: dict[str, str] = {}   # $SYS 指标快照（连接数、丢弃数等）
 live_meta = {"connected": False, "frames": 0, "last_ts": None}
 
 
 def on_connect(client, userdata, flags, reason_code, properties=None) -> None:
     live_meta["connected"] = True
-    client.subscribe(TOPIC, qos=1)
+    client.subscribe([(TOPIC, 1), ("$SYS/#", 0)])
 
 
 def on_disconnect(client, userdata, flags, reason_code, properties=None) -> None:
@@ -77,6 +78,9 @@ def on_disconnect(client, userdata, flags, reason_code, properties=None) -> None
 
 
 def on_message(client, userdata, msg) -> None:
+    if msg.topic.startswith("$SYS/"):
+        mqtt_sys[msg.topic] = msg.payload.decode(errors="replace")[:64]
+        return
     try:
         p = json.loads(msg.payload)
     except ValueError:
@@ -228,6 +232,17 @@ def series(
     pts = lttb(pts)
     return {"zone": zone, "drive": drive, "window": window, "source": source,
             "points": pts, "point_count": len(pts), "raw_count": before}
+
+
+@app.get("/api/mqtt")
+def mqtt_metrics() -> dict[str, Any]:
+    """连接数与丢弃数的快照：峰值看 clients/maximum，速率看 load/connections。"""
+    keys = [
+        "clients/connected", "clients/maximum", "clients/total",
+        "messages/received", "messages/sent", "publish/messages/dropped",
+        "load/connections/1min",
+    ]
+    return {k.split("/")[-1]: mqtt_sys.get(f"$SYS/broker/{k}") for k in keys}
 
 
 @app.get("/api/alerts")
