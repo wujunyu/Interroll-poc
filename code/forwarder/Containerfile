@@ -1,0 +1,7 @@
+FROM python:3.12-slim
+ENV PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple PYTHONUNBUFFERED=1
+WORKDIR /app
+RUN pip install --no-cache-dir "psycopg[binary]==3.2.3"
+COPY main.py ./
+EXPOSE 8082
+CMD ["python", "main.py"]

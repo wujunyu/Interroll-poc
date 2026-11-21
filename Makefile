@@ -41,6 +41,13 @@ images: ## 用 podman 构建四个镜像（需在宿主机执行，见脚本）
 sim: ## 10Hz 造数 10 秒（QoS1）
 	.conda-env/bin/python code/simulator/main.py --duration 10 --qos 1
 
+center: ## 起中心侧（center-db + forwarder，演练边缘→中心）
+	docker compose --env-file .env -f deploy/compose/compose.yaml --profile center up -d
+	@echo "中心库：localhost:$${CENTER_DB_PORT:-5434}  forwarder 健康：docker inspect --format '{{.State.Health.Status}}' interroll-poc-forwarder-1"
+
+center-down: ## 停中心侧并删中心数据卷
+	-docker compose --env-file .env -f deploy/compose/compose.yaml --profile center down -v
+
 emqx: ## 起 EMQX 实验环境（1885 / 控制台 18083，admin/poc-emqx）
 	docker compose -f deploy/compose/compose.emqx.yaml up -d
 	@echo "控制台：http://localhost:18083  （admin / poc-emqx）"

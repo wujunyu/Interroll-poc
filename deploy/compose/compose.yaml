@@ -105,6 +105,48 @@ services:
       - api
 
   # 只在开发/演示时开：docker compose --profile demo up -d simulator
+  # ---- 中心侧（可选，仅 P10 演练）：make center 才起 ----
+  center-db:
+    profiles: ["center"]
+    logging: *default-logging
+    image: timescale/timescaledb:latest-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-poc}
+      POSTGRES_USER: ${DB_USER:-poc}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?请在 .env 设置 DB_PASSWORD}
+    ports:
+      - "${CENTER_DB_PORT:-5434}:5432"
+    volumes:
+      - pgdata-center:/var/lib/postgresql/data
+      - ../db/init-center.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-poc} -d ${DB_NAME:-poc}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  forwarder:
+    profiles: ["center"]
+    logging: *default-logging
+    image: interroll-poc-forwarder:${APP_VERSION:-0.3.1}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      APP_VERSION: ${APP_VERSION:-0.3.1}
+      SITE_ID: ${SITE_ID:-S1}
+      EDGE_DSN: postgresql://${DB_USER:-poc}:${DB_PASSWORD}@db:5432/${DB_NAME:-poc}
+      CENTER_DSN: postgresql://${DB_USER:-poc}:${DB_PASSWORD}@center-db:5432/${DB_NAME:-poc}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/healthz', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      db: { condition: service_healthy }
+      center-db: { condition: service_healthy }
+
   simulator:
     logging: *default-logging
     # 镜像由 podman 构建后导入（见 deploy/scripts/build-images.sh），compose 只负责运行
@@ -129,3 +171,4 @@ networks:
 
 volumes:
   pgdata:
+  pgdata-center:
