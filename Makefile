@@ -75,6 +75,9 @@ verify: config ## 验收：compose + 脚本语法
 bundle: ## 打离线交付包（镜像+编排+脚本 → dist/*.tar.gz）
 	bash deploy/scripts/bundle.sh
 
+pg-perf: ## PG/TimescaleDB 性能体检（只读）
+	bash deploy/scripts/pg-perf.sh
+
 diag: ## 导出诊断包（B 批）
 	@echo "TODO(B 批): 收集 system/config/logs/mqtt-tail/db-stats → dist/diag-<ts>.zip"
 
