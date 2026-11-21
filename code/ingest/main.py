@@ -35,6 +35,7 @@ BATCH_ROWS = int(os.environ.get("BATCH_ROWS", "200"))
 BATCH_SECONDS = float(os.environ.get("BATCH_SECONDS", "1.0"))
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", "8091"))
 WAL_DIR = os.environ.get("WAL_DIR", "/tmp/interroll-ingest-wal")
+REPLAY_STALE_SECONDS = float(os.environ.get("REPLAY_STALE_SECONDS", "60"))
 os.makedirs(WAL_DIR, exist_ok=True)
 
 INSERT_SQL = """
@@ -125,7 +126,7 @@ def wal_replay() -> int:
             return 0
         total = 0
         offset = wal_committed_bytes
-        conn = psycopg.connect(DSN)
+        conn = psycopg.connect(DSN, connect_timeout=5)
         try:
             with open(WAL_PATH, "rb") as fh:
                 fh.seek(wal_committed_bytes)
@@ -158,7 +159,7 @@ def wal_replay() -> int:
                 stats["rows_written"] += total
             log.info("wal replayed", extra={"rows": total})
             try:
-                event(psycopg.connect(DSN), "wal_replayed", rows=total)
+                event(psycopg.connect(DSN, connect_timeout=5), "wal_replayed", rows=total)
             except Exception:
                 pass
         return total
@@ -199,7 +200,7 @@ def get_conn(force_new: bool = False) -> psycopg.Connection:
     global _conn
     with _conn_lock:
         if force_new or _conn is None or _conn.closed:
-            _conn = psycopg.connect(DSN)
+            _conn = psycopg.connect(DSN, connect_timeout=5)
         return _conn
 
 
@@ -286,6 +287,8 @@ class Health(BaseHTTPRequestHandler):
             "wal_pending_bytes": wal_pending(),
             "replay_thread_alive": bool(_replay_thread and _replay_thread.is_alive()),
             "replay_tick_age_s": round(time.time() - stats["replay_tick"], 1) if stats["replay_tick"] else None,
+            "wal_stuck": bool(stats["replay_tick"] and
+                              time.time() - stats["replay_tick"] > REPLAY_STALE_SECONDS),
             "frame_age_s": round(time.time() - stats["last_frame"], 1) if stats["last_frame"] else None,
             "lag_seconds": lag,
             "batches": stats["batches"],
@@ -379,11 +382,19 @@ def main() -> int:
             if due_rows or due_time:
                 flush()
                 last_flush = time.time()
-            # 看门狗：daemon 线程异常退出不会影响进程，必须主动发现并重启
+            # 看门狗 ①：线程死了 → 新建一个（Thread 不能 restart）
             if _replay_thread is not None and not _replay_thread.is_alive():
                 log.error("replay thread died, restarting")
                 _replay_thread = threading.Thread(target=replay_loop, daemon=True)
                 _replay_thread.start()
+
+            # 看门狗 ②：线程活着但心跳停了（卡在 IO）→ Python 杀不了线程，只能退出进程
+            # WAL 已落盘，退出后由 docker restart 拉起并回放，不会丢数据
+            tick_age = time.time() - stats["replay_tick"] if stats["replay_tick"] else 0.0
+            if _db_down and tick_age > REPLAY_STALE_SECONDS and wal_pending() > 0:
+                log.critical("replay stuck, exiting for supervisor restart",
+                             extra={"detail": f"tick_age={tick_age:.0f}s pending={wal_pending()}B"})
+                os._exit(3)
     except KeyboardInterrupt:
         flush()
         try:
