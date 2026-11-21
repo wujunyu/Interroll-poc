@@ -28,6 +28,13 @@ services:
     logging: *default-logging
     image: timescale/timescaledb:latest-pg17
     restart: unless-stopped
+    # 慢查询统计：diag 包里要能给出 TOP5（默认只加载 timescaledb）
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=timescaledb,pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
     environment:
       POSTGRES_DB: ${DB_NAME:-poc}
       POSTGRES_USER: ${DB_USER:-poc}

@@ -38,9 +38,9 @@ for svc in mqtt db ingest api web; do
   $COMPOSE logs --tail=300 "$svc" > "$PKG/logs/$svc.log" 2>&1 || true
 done
 
-echo "[diag] 抓 MQTT 尾巴（10 条，3 秒超时）"
-timeout 5 $ENGINE run --rm --network host eclipse-mosquitto:2 \
-  mosquitto_sub -h 127.0.0.1 -p "${MQTT_PORT:-1884}" -t 'line/#' -C 10 -W 3 -v 2>/dev/null \
+echo "[diag] 抓 MQTT 尾巴（100 条，5 秒超时）"
+timeout 8 $ENGINE run --rm --network host eclipse-mosquitto:2 \
+  mosquitto_sub -h 127.0.0.1 -p "${MQTT_PORT:-1884}" -t 'line/#' -C 100 -W 5 -v 2>/dev/null \
   > "$PKG/mqtt-tail.ndjson" || echo "(没有收到消息)" > "$PKG/mqtt-tail.ndjson"
 
 echo "[diag] 收集库统计"
@@ -53,6 +53,32 @@ union all select '聚合行数', count(*)::text from telemetry_1m
 union all select '最新水位', max(ts)::text from telemetry;
 select hypertable_name, pg_size_pretty(hypertable_size(format('%I', hypertable_name)::regclass)) as size
 from timescaledb_information.hypertables;
+SQL
+
+echo "[diag] 收集慢查询 TOP5 与活跃会话"
+DB_PW="$(grep -E '^DB_PASSWORD=' "$ROOT/.env" | cut -d= -f2)"
+DB_USER="$(grep -E '^DB_USER=' "$ROOT/.env" | cut -d= -f2)"
+DB_NAME="$(grep -E '^DB_NAME=' "$ROOT/.env" | cut -d= -f2)"
+$ENGINE exec -i -e PGPASSWORD="$DB_PW" interroll-poc-db-1 psql -P pager=off -U "$DB_USER" -d "$DB_NAME" <<'SQL' > "$PKG/slow-queries.txt" 2>&1 || echo "慢查询不可读（pg_stat_statements 未启用）" > "$PKG/slow-queries.txt"
+select calls,
+       round(total_exec_time::numeric, 1) as total_ms,
+       round(mean_exec_time::numeric, 2)  as mean_ms,
+       rows,
+       left(regexp_replace(query, '\s+', ' ', 'g'), 160) as query
+from pg_stat_statements
+where query not like '%pg_stat_statements%'
+order by total_exec_time desc
+limit 5;
+SQL
+
+$ENGINE exec -i -e PGPASSWORD="$DB_PW" interroll-poc-db-1 psql -P pager=off -U "$DB_USER" -d "$DB_NAME" <<'SQL' > "$PKG/sessions.txt" 2>&1 || echo "会话不可读" > "$PKG/sessions.txt"
+select pid, usename, state, wait_event_type, wait_event,
+       round(extract(epoch from (now() - query_start))::numeric, 1) as running_s,
+       left(regexp_replace(query, '\s+', ' ', 'g'), 120) as query
+from pg_stat_activity
+where datname = current_database() and pid <> pg_backend_pid()
+order by query_start nulls last
+limit 20;
 SQL
 
 echo "[diag] 采集 MQTT 指标 (\$SYS)"

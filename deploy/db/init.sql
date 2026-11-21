@@ -42,6 +42,9 @@ SELECT add_continuous_aggregate_policy('telemetry_1m',
        schedule_interval => INTERVAL '1 minute',
        if_not_exists => TRUE);
 
+-- 慢查询统计（compose 已把 pg_stat_statements 加进 shared_preload_libraries）
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
 -- 事件表：只记「发生了什么」，不记日志流水（审计 / 诊断包时间线）
 CREATE TABLE IF NOT EXISTS events (
     ts       timestamptz NOT NULL DEFAULT now(),
