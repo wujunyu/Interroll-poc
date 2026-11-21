@@ -1,0 +1,33 @@
+# 可选实验：用 EMQX 替换 mosquitto（只在需要看连接速率/每客户端指标时起）
+#   make emqx        # 起 EMQX（1885 给设备，18083 控制台）
+#   make emqx-down
+# 不进入交付包，也不改默认栈（见 ADR-0006）
+services:
+  emqx:
+    image: docker.m.daocloud.io/emqx/emqx:5.8.4
+    container_name: interroll-poc-emqx
+    restart: unless-stopped
+    environment:
+      EMQX_ALLOW_ANONYMOUS: "true"
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "poc-emqx"
+      EMQX_NODE__NAME: "emqx@127.0.0.1"
+    ports:
+      - "${EMQX_MQTT_PORT:-1885}:1883"     # 设备侧 MQTT
+      - "${EMQX_DASH_PORT:-18083}:18083"   # 控制台 / REST API
+    volumes:
+      - emqx-data:/opt/emqx/data
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+    networks:
+      - emqxnet
+
+volumes:
+  emqx-data:
+
+networks:
+  emqxnet:
+    ipam:
+      config:
+        - subnet: 10.77.32.0/24   # 宿主 docker 地址池已耗尽，必须显式指定

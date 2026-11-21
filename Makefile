@@ -41,6 +41,13 @@ images: ## 用 podman 构建四个镜像（需在宿主机执行，见脚本）
 sim: ## 10Hz 造数 10 秒（QoS1）
 	.conda-env/bin/python code/simulator/main.py --duration 10 --qos 1
 
+emqx: ## 起 EMQX 实验环境（1885 / 控制台 18083，admin/poc-emqx）
+	docker compose -f deploy/compose/compose.emqx.yaml up -d
+	@echo "控制台：http://localhost:18083  （admin / poc-emqx）"
+
+emqx-down: ## 停 EMQX 实验环境
+	-docker compose -f deploy/compose/compose.emqx.yaml down
+
 qos-lab: ## QoS 0/1/2 故障注入实验（先 make up-infra）
 	@for cfg in "0 0" "1 1" "2 2" "2 0"; do set -- $$cfg; \
 		.conda-env/bin/python code/simulator/qos_lab.py --qos $$1 --sub-qos $$2 \

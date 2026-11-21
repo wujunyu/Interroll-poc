@@ -1,0 +1,17 @@
+# 在 x86_64 上交叉编译 linux-arm64 / linux-x64 的 NativeAOT 二进制
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      clang lld gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libc6-dev-arm64-cross \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY aotprobe.csproj Program.cs ./
+RUN dotnet restore -r linux-arm64
+# 交叉编译时 ILCompiler 调的是裸名 objcopy/strip，必须让它们指向 aarch64 版本
+RUN mkdir -p /opt/arm64bin \
+    && ln -sf /usr/bin/aarch64-linux-gnu-objcopy /opt/arm64bin/objcopy \
+    && ln -sf /usr/bin/aarch64-linux-gnu-strip  /opt/arm64bin/strip
+RUN PATH=/opt/arm64bin:$PATH dotnet publish -r linux-arm64 -c Release -o /out/arm64
+RUN dotnet publish -r linux-x64 -c Release -o /out/x64
+RUN ls -l /out/arm64/aotprobe /out/x64/aotprobe \
+    && echo "--- arm64" && aarch64-linux-gnu-readelf -h /out/arm64/aotprobe | grep -E "Class|Machine|Type" \
+    && echo "--- x64" && readelf -h /out/x64/aotprobe | grep -E "Class|Machine|Type"
