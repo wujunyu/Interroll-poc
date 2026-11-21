@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("aotprobe")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8371d76dcf97670fc8398e5deec867f9c520ec1e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+37b0b860f4edf1866b1f8f9ee9dc1d27efde980c")]
 [assembly: System.Reflection.AssemblyProductAttribute("aotprobe")]
 [assembly: System.Reflection.AssemblyTitleAttribute("aotprobe")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

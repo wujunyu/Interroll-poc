@@ -1,0 +1,489 @@
+{
+  "root": {
+    "data": {
+      "text": "英特诺 PoC · 技术要点"
+    },
+    "children": [
+      {
+        "data": {
+          "text": "1 架构与拓扑"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "边缘 5 容器：mqtt / ingest / db / api / web"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "同源入口 :5174（nginx 反代 /api /ws）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "边缘 → 中心：forwarder 按水位推送"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "中心库主键多一列 site_id"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "2 MQTT"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "QoS 实测：0 丢 151 / 1 全到 / 2 少其一"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "有效 QoS = min(发布, 订阅)"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "持久会话 clean_session=false + 固定 client_id"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "重连退避：paho 默认 1→120s，压到 1–2s"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "抖动两种：offset（每台固定）/ full（每次重抽）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "$SYS 指标：connected / maximum / dropped / 1min 速率"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "Broker 选型：mosquitto 2.7MB vs EMQX 245MB"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "EMQX 强项：连接限速、每客户端指标、集群"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "许可：mosquitto EPL-2.0，EMQX BUSL-1.1"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "3 数据模型"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "主键 (zone, drive, ts, seq) = 幂等键"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "hypertable：逻辑一张表，物理按时间切 chunk"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "唯一约束只在 chunk 内 → 主键必须带 ts"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "连续聚合 telemetry_1m（增量刷新）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "保留：原始 7 天 / 聚合 90 天，drop chunk 不 DELETE"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "压缩：chunk 级列存，segmentby=(zone,drive)"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "压缩实测 35MB → 5.8MB（约 6 倍）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "压缩会持锁：与全表 max(ts) 互锁，实测等 5 分钟"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "小数据量下 hypertable 不比普通表快（8.4 vs 11.3ms）"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "4 写入路径"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "MQTT 逐条到 → 内存 buffer → 批量写"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "批量 200 行 / 1 秒，一次 commit"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "逐条提交 501 行/秒"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "executemany 44,521 行/秒"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "COPY 临时表 56,682 行/秒（但不能 ON CONFLICT）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "瓶颈是 commit 次数（WAL fsync），不是 SQL"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "RPO ≈ 1 秒；SIGTERM 会先 flush"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "要 RPO=0：手动 ACK 或先落盘 WAL"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "5 断流与恢复"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "三段责任：设备 / broker 会话 / ingest"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "设备侧 spool（ndjson）+ 恢复补发"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "ingest spool：库挂了整批落盘"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "forwarder 水位 + 120s 重叠回扫"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "迟到行陷阱：只按 ts>水位 会漏 184 条"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "实测：断 60s，0 丢 0 重，1s 追平"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "6 多机与重连风暴"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "fleet.py：每台设备一条独立连接"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "offset 模式：jitter 0/3/10 → 峰值 664/248/44"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "full jitter：峰值更低（67/51），恢复更慢"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "抖动是峰值换时长，不是减少负载"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "厂商边界：设备固件可写契约，平台只能限流+排队"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "7 背压"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "服务端 WS 10fps 节流"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "前端 useLive 90ms 合并"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "useHistory 环形缓冲 120 点（丢旧值）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "实测：1856 点/秒仍 60fps、0 长任务"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "前端抗的是渲染速率，不是数据速率"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "8 可观测与诊断"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "JSON 日志 + faulthandler + 容器日志上限 10m×3"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "events 表：启动/停库/恢复/补传"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "healthcheck：api / ingest 15s 探活"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "diag 17 个文件（含慢查询/会话/100 条消息）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "慢查询靠 pg_stat_statements"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "退出码：137=OOM、143=SIGTERM、1=异常"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "9 部署与回滚"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "podman 构建 → docker load → compose 运行"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "离线包 660MB（镜像 + 编排 + 脚本）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "回滚 12 秒（切 tag + 轮询版本）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "坏版本检测 48 秒（healthcheck 参数决定）"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "nginx 缓存旧 IP → 502，用 resolver 变量修"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "镜像架构：当前 amd64，ARM 需重建"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "10 技术栈选型"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "Python：边缘内存 25/44MB，吞吐有 100 倍余量"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": ".NET AOT：交叉编译 1.32MB、启动 1.7ms"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "AOT 不支持 32 位 x86；EF Core 基本不可 AOT"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "32 位老设备只能 Go/C"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "产品化建议：团队 .NET 则用 ASP.NET Core + MQTTnet"
+            },
+            "children": []
+          }
+        ]
+      },
+      {
+        "data": {
+          "text": "11 面试叙事"
+        },
+        "children": [
+          {
+            "data": {
+              "text": "七个量化结论：断流/风暴/背压/取证/回滚/跨机/迟到行"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "先讲边界再讲功能：谁兜底、RPO 多少"
+            },
+            "children": []
+          },
+          {
+            "data": {
+              "text": "不硬凹 UML 类图（Python 无类）"
+            },
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "layout": "logicalStructure",
+  "theme": {
+    "template": "avocado",
+    "config": {}
+  },
+  "config": {},
+  "view": null
+}
