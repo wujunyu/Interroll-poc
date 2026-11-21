@@ -59,5 +59,11 @@ SELECT add_retention_policy('telemetry',    INTERVAL '7 days',  if_not_exists =>
 SELECT add_retention_policy('telemetry_1m', INTERVAL '90 days', if_not_exists => TRUE);
 
 -- 压缩：7 天前的块
-ALTER TABLE telemetry SET (timescaledb.compress, timescaledb.compress_segmentby = 'drive_id');
+-- segmentby 必须包含 zone_id：D01..D06 在 6 个区里都存在，只按 drive_id 分段会把 6 个区混在一段里
+-- orderby 用 ts DESC：时间近的先出，范围查询少解压
+ALTER TABLE telemetry SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'zone_id, drive_id',
+    timescaledb.compress_orderby   = 'ts DESC'
+);
 SELECT add_compression_policy('telemetry', INTERVAL '7 days', if_not_exists => TRUE);
