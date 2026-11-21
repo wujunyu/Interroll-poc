@@ -40,11 +40,26 @@ def main() -> int:
     args = ap.parse_args()
 
     zones = tuple(z for z in args.zones.split(",") if z)
+    connected = threading.Event()
+
+    def _on_connect(c, u, flags, rc, props=None):
+        connected.set()
+
+    def _on_disconnect(c, u, flags, rc, props=None):
+        connected.clear()
+
     cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"sim-{int(time.time())}")
+    cli.on_connect = _on_connect
+    cli.on_disconnect = _on_disconnect
+    # 默认重连退避会涨到几十秒；现场要求"恢复后 10 秒内追平"，压到 1–2 秒
+    cli.reconnect_delay_set(min_delay=1, max_delay=2)
+    # 默认 inflight=20 会把 QoS1 吞吐压在几百条/秒；补传要快就得放开
+    cli.max_inflight_messages_set(500)
     if args.user:
         cli.username_pw_set(args.user, args.password)
     cli.connect(args.host, args.port, keepalive=30)
     cli.loop_start()
+    connected.wait(timeout=5)   # 等 on_connect，避免第一拍被当成"离线"写进 spool
 
     seq = 0
     sent = 0
@@ -98,7 +113,8 @@ def main() -> int:
                 print(f"· [{elapsed:5.1f}s] 补传完成 {replayed} 条", flush=True)
 
             ts = datetime.now(CST).isoformat(timespec="milliseconds")
-            if offline_until is None:
+            online = offline_until is None and connected.is_set()
+            if online:
                 for zone in zones:
                     for drive in DRIVES:
                         seq += 1
@@ -106,7 +122,7 @@ def main() -> int:
                         cli.publish(topic_for(zone, drive, args.prefix), payload, qos=args.qos)
                         sent += 1
             else:
-                # 断网：不丢，落本地 spool（真实设备上是 edge 机的本地库）
+                # 断网 / 与 broker 失联：不丢，落本地 spool（真实设备上是本地库）
                 with open(args.spool, "a", encoding="utf-8") as fh:
                     for zone in zones:
                         for drive in DRIVES:
@@ -115,6 +131,30 @@ def main() -> int:
                                    "payload": json.loads(to_payload(make_sample(zone, drive, seq, ts, elapsed)))}
                             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                             buffered += 1
+
+            # broker 掉线恢复后同样要补传（不是只有计划内断网才有 spool）
+            if online and buffered > 0 and os.path.exists(args.spool) and (replay_thread is None or not replay_thread.is_alive()):
+                def replay(path: str) -> None:
+                    nonlocal sent, replayed
+                    chunk = 0
+                    t0 = time.monotonic()
+                    with open(path, encoding="utf-8") as fh:
+                        for line in fh:
+                            rec = json.loads(line)
+                            cli.publish(rec["topic"], json.dumps(rec["payload"], separators=(",", ":")), qos=args.qos)
+                            sent += 1
+                            replayed += 1
+                            chunk += 1
+                            if chunk % 50 == 0:
+                                ahead = chunk / args.replay_rate - (time.monotonic() - t0)
+                                if ahead > 0:
+                                    time.sleep(ahead)
+                    os.remove(path)
+                    print(f"· 后台补传完成 {chunk} 条，用时 {time.monotonic() - t0:.1f}s", flush=True)
+
+                replay_thread = threading.Thread(target=replay, args=(args.spool,), daemon=True)
+                replay_thread.start()
+                print(f"· [{elapsed:5.1f}s] 检测到失联恢复，开始补传 spool", flush=True)
 
             next_tick += period
             time.sleep(max(0.0, next_tick - time.monotonic()))

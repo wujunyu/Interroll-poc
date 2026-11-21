@@ -261,6 +261,9 @@ def main() -> int:
         clean_session=False,
     )
     cli.on_message = on_message
+    # broker 重启后要尽快复连，否则排队的数据要等几十秒才被取走
+    cli.reconnect_delay_set(min_delay=1, max_delay=2)
+    cli.max_inflight_messages_set(500)
     cli.on_connect = lambda c, u, flags, rc, props=None: log.info(
         "mqtt connected", extra={"detail": f"session_present={getattr(flags, 'session_present', None)}"})
     if MQTT_USERNAME:

@@ -114,6 +114,7 @@ def start_mqtt() -> None:
     cli.on_connect, cli.on_disconnect, cli.on_message = on_connect, on_disconnect, on_message
     if MQTT_USERNAME:
         cli.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    cli.reconnect_delay_set(min_delay=1, max_delay=2)
     cli.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
     cli.loop_start()
 
