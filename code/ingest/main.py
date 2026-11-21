@@ -253,8 +253,16 @@ def main() -> int:
     log.info("healthz listening", extra={"detail": HEALTH_PORT})
     event(_conn, "ingest_start")
 
-    cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"ingest-{os.getpid()}")
+    # clean_session=False + 固定 client_id：ingest 重启期间 broker 替它排队（QoS1），
+    # 重连后补投；重复由 (zone_id, drive_id, ts, seq) 幂等键挡掉。
+    cli = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id=os.environ.get("MQTT_CLIENT_ID", "ingest-1"),
+        clean_session=False,
+    )
     cli.on_message = on_message
+    cli.on_connect = lambda c, u, flags, rc, props=None: log.info(
+        "mqtt connected", extra={"detail": f"session_present={getattr(flags, 'session_present', None)}"})
     if MQTT_USERNAME:
         cli.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     cli.connect(MQTT_HOST, MQTT_PORT, keepalive=30)

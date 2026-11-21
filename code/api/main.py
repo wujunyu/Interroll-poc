@@ -63,6 +63,7 @@ app.add_middleware(
 # ---- 实时缓存：paho 线程写，事件循环读 ----
 live_lock = threading.Lock()
 live: dict[tuple[str, str], dict[str, Any]] = {}
+live_ts: dict[tuple[str, str], tuple[datetime, int]] = {}   # (事件时间, seq) 游标
 live_meta = {"connected": False, "frames": 0, "last_ts": None}
 
 
@@ -80,6 +81,19 @@ def on_message(client, userdata, msg) -> None:
         p = json.loads(msg.payload)
     except ValueError:
         return
+    # 补传的消息 ts 是过去的；不能让旧值覆盖当前状态（到达顺序不可靠）
+    try:
+        ts = datetime.fromisoformat(p["ts"])
+    except (KeyError, ValueError):
+        return
+    key = (p["zone"], p["drive"])
+    seq = int(p.get("seq", 0))
+    with live_lock:
+        last = live_ts.get(key)
+        # 用 (ts, seq) 做游标：同一秒内的多条靠 seq 区分，不会被误判成旧消息
+        if last is not None and (ts, seq) <= last:
+            return
+        live_ts[key] = (ts, seq)
     try:
         for alert in engine.update(p):
             log.info("alert", extra={"detail": f"{alert.state} {alert.message}"})

@@ -73,4 +73,8 @@ Topic：`line/{zone}/drive/{drive}`（QoS 由 `--qos` 决定，不 retain）
  "speed_mps":0.78,"current_a":2.5,"temp_c":41.2,"state":"running"}
 ```
 
-`seq` 设备侧自增，补传去重靠它。
+`seq` 设备侧自增，补传去重靠它。**MQTT 不生成 seq**，它只有 packet id（确认匹配用，无业务含义）。
+
+注意两个简化：
+1. seq 是**全局自增**（36 台共用），所以只能保证「同一设备内单调」，不保证每台连续；
+2. 恢复后补发即删缓存，没有等业务层 ack——真实设备应保留到收到确认。
