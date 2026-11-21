@@ -52,7 +52,7 @@ where state = 'idle in transaction' order by idle_s desc;
 select calls,
        round(total_exec_time::numeric,0) total_ms,
        round(mean_exec_time::numeric,2)  mean_ms,
-       round(100.0*total_exec_time/sum(total_exec_time) over (),1) pct,
+       round((100.0*total_exec_time/sum(total_exec_time) over ())::numeric,1) pct,
        left(regexp_replace(query,'\s+',' ','g'),90) query
 from pg_stat_statements
 where query not like '%pg_stat_statements%'
@@ -170,6 +170,23 @@ order by name;
 | `maintenance_work_mem` | 2 GB | vacuum/建索引用 |
 | `max_wal_size` | 1 GB | 太小会导致频繁 checkpoint |
 | `random_page_cost` | 1.1 | SSD 上正常 |
+
+### 一个类型坑（脚本里踩过）
+
+`pg_stat_statements` 的 `total_exec_time` 是 **double precision**，而 PostgreSQL **没有** `round(double precision, int)`：
+
+```
+ERROR: function round(double precision, integer) does not exist
+```
+
+必须显式转 numeric：
+
+```sql
+round((100.0*total_exec_time/sum(total_exec_time) over ())::numeric, 1)
+```
+
+`bigint` 参与 `100.0 * x` 会先变 numeric，所以 `round(100.0*n_dead_tup/...)` 没问题——
+**只有 double precision 需要手动转**。
 
 ## 七、一键脚本
 

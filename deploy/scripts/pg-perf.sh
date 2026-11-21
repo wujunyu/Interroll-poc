@@ -10,7 +10,7 @@ DB_USER="$(grep -E '^DB_USER=' "$ROOT/.env" | cut -d= -f2)"
 DB_NAME="$(grep -E '^DB_NAME=' "$ROOT/.env" | cut -d= -f2)"
 DB_PW="$(grep -E '^DB_PASSWORD=' "$ROOT/.env" | cut -d= -f2)"
 
-$ENGINE exec -i -e PGPASSWORD="$DB_PW" "$CT" psql -P pager=off -U "$DB_USER" -d "$DB_NAME" <<'SQL'
+out=$($ENGINE exec -i -e PGPASSWORD="$DB_PW" "$CT" psql -P pager=off -U "$DB_USER" -d "$DB_NAME" <<'SQL'
 \echo '== 1. 版本与关键参数 =='
 select version();
 select name, setting, unit
@@ -39,7 +39,7 @@ limit 10;
 
 \echo '== 3. 慢查询 TOP10（pg_stat_statements）=='
 select calls, round(total_exec_time::numeric,0) total_ms, round(mean_exec_time::numeric,2) mean_ms,
-       round(100.0*total_exec_time/sum(total_exec_time) over (),1) pct,
+       round((100.0*total_exec_time/sum(total_exec_time) over ())::numeric,1) pct,
        left(regexp_replace(query,'\s+',' ','g'),90) query
 from pg_stat_statements
 where query not like '%pg_stat_statements%'
@@ -98,3 +98,11 @@ select datname, xact_commit, tup_inserted, tup_updated,
        pg_size_pretty(pg_database_size(datname)) size
 from pg_stat_database where datname = current_database();
 SQL
+)
+printf '%s\n' "$out"
+errs=$(printf '%s\n' "$out" | grep -c '^ERROR' || true)
+if [ "${errs:-0}" -gt 0 ]; then
+  echo "⚠ 有 $errs 条查询失败（见上方 ERROR）" >&2
+  exit 1
+fi
+echo "✓ 体检完成，无 SQL 错误"
