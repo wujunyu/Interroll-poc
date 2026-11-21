@@ -68,6 +68,7 @@ def main() -> int:
     ap.add_argument("--outage", type=float, default=10.0)
     ap.add_argument("--stagger", type=float, default=10.0)
     ap.add_argument("--jitter", type=float, default=3.0)
+    ap.add_argument("--jitter-mode", choices=["offset", "full"], default="offset")
     ap.add_argument("--hz", type=float, default=10.0)
     ap.add_argument("--port", type=int, default=int(os.environ.get("MQTT_PORT", "1884")))
     ap.add_argument("--seed", type=int, default=None)
@@ -81,7 +82,8 @@ def main() -> int:
     fleet = subprocess.Popen(
         [PY_BIN, "code/simulator/fleet.py", "--devices", str(args.devices),
          "--duration", str(args.duration), "--stagger", str(args.stagger),
-         "--jitter", str(args.jitter), "--hz", str(args.hz), "--port", str(args.port)],
+         "--jitter", str(args.jitter), "--jitter-mode", args.jitter_mode,
+         "--hz", str(args.hz), "--port", str(args.port)],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     time.sleep(args.stagger + 8)          # 等设备陆续接入
@@ -103,7 +105,9 @@ def main() -> int:
     min_after = min((v for _, v in after), default=0)
     peak_rate = 0.0
     for (t1, v1), (t2, v2) in zip(after, after[1:]):
-        dt = max(t2 - t1, 0.001)
+        dt = t2 - t1
+        if dt < 0.5:          # $SYS 可能同秒连发，亚秒窗口会把速率放大成假峰值
+            continue
         peak_rate = max(peak_rate, max(0, v2 - v1) / dt)
     recover_s = next((round(t, 1) for t, v in after if v >= baseline * 0.95), None)
 
@@ -113,6 +117,7 @@ def main() -> int:
         "devices": args.devices,
         "stagger_s": args.stagger,
         "jitter_s": args.jitter,
+        "jitter_mode": args.jitter_mode,
         "baseline_connected": baseline,
         "min_connected_after_restart": min_after,
         "peak_reconnect_per_s": round(peak_rate, 1),
