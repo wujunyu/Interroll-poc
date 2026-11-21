@@ -36,6 +36,10 @@ MQTT_USERNAME = os.environ.get("MQTT_USERNAME", "")
 MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "")
 TOPIC = os.environ.get("MQTT_TOPIC", "line/#")
 WS_FPS = float(os.environ.get("WS_FPS", "10"))
+WS_SEND_TIMEOUT = float(os.environ.get("WS_SEND_TIMEOUT", "2.0"))   # 发不出去就判定客户端假死
+ws_clients = 0
+ws_stats = {"timeouts": 0, "accepted": 0}
+ws_lock = threading.Lock()
 VERSION = os.environ.get("APP_VERSION", "dev")
 PORT = int(os.environ.get("API_PORT", "8000"))
 ALERT_FOR = float(os.environ.get("ALERT_FOR_SECONDS", "30"))
@@ -165,6 +169,8 @@ def healthz() -> dict[str, Any]:
         "version": VERSION,
         "mqtt": {"connected": live_meta["connected"], "frames": live_meta["frames"], "last_ts": live_meta["last_ts"]},
         "ws_fps": WS_FPS,
+        "ws": {"clients": ws_clients, "fps": WS_FPS,
+               "timeouts": ws_stats["timeouts"], "accepted": ws_stats["accepted"]},
     }
     try:
         with db() as conn, conn.cursor() as cur:
@@ -254,7 +260,13 @@ def alerts(limit: int = Query(20, ge=1, le=200)) -> dict[str, Any]:
 
 @app.websocket("/ws/live")
 async def ws_live(ws: WebSocket) -> None:
+    global ws_clients
     await ws.accept()
+    with ws_lock:
+        ws_clients += 1
+        ws_stats["accepted"] += 1
+        online = ws_clients
+    log.info("ws connected", extra={"detail": online})
     interval = 1.0 / WS_FPS
     try:
         while True:
@@ -262,14 +274,24 @@ async def ws_live(ws: WebSocket) -> None:
             with live_lock:
                 snapshot = list(live.values())
                 frames = live_meta["frames"]
-            if not snapshot:
-                await ws.send_json({"ts": datetime.now(timezone.utc).isoformat(), "points": []})
-                continue
-            # 按 (zone, drive) 排序，前端好做 diff
-            snapshot.sort(key=lambda p: (p["zone"], p["drive"]))
-            await ws.send_json({"ts": snapshot[-1]["ts"], "frames": frames, "points": snapshot})
+            payload = {"ts": datetime.now(timezone.utc).isoformat(), "frames": frames,
+                       "points": sorted(snapshot, key=lambda p: (p["zone"], p["drive"]))}
+            try:
+                # 背压的最后一环：客户端读不动时 send 会卡住，超时即判定假死
+                await asyncio.wait_for(ws.send_json(payload), timeout=WS_SEND_TIMEOUT)
+            except asyncio.TimeoutError:
+                with ws_lock:
+                    ws_stats["timeouts"] += 1
+                log.warning("ws send timeout, closing", extra={"detail": WS_SEND_TIMEOUT})
+                await ws.close(code=1013)   # try again later
+                return
     except WebSocketDisconnect:
         return
+    finally:
+        with ws_lock:
+            ws_clients -= 1
+            online = ws_clients
+        log.info("ws closed", extra={"detail": online})
 
 
 def sweeper() -> None:

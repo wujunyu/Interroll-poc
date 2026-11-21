@@ -13,7 +13,7 @@ export function Header({ health, connected }: { health: Health | null; connected
       </div>
       <div className="hdr-right">
         <span className="chip"><i className={mqttOk ? 'dot ok' : 'dot off'} />{mqttOk ? 'Broker 已连接' : 'Broker 断开'}</span>
-        <span className="chip"><i className={connected ? 'dot ok' : 'dot off'} />{connected ? 'WS 10fps' : 'WS 断开'}</span>
+        <span className="chip"><i className={connected ? 'dot ok' : 'dot off'} />{connected ? 'WS 10fps' : 'WS 重连中…'}</span>
         <span className="clock">{new Date().toLocaleTimeString('zh-CN', { hour12: false })}</span>
       </div>
     </header>
