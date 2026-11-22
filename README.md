@@ -38,6 +38,15 @@ make verify     # config + 语法
 
 > 本机直跑 Python（不起容器）时用 `.env.dev`；compose 只读 `.env`，两者不要混。
 
+## 远端约定
+
+| 名字 | 地址 | 用途 |
+|---|---|---|
+| `origin` | 内网 Gitea（`ssh://git@192.168.1.200:2222/vincent.wu/Interroll-poc.git`） | 日常开发，`main` 跟踪它 |
+| `github` | `git@github.com:wujunyu/Interroll-poc.git` | 对外发布，显式推：`git push github main` |
+
+`upstream` 这个名字**留给 fork 别人的项目时用**（表示"别人的源仓库"），这里两个仓库都属于自己，所以按托管方命名。
+
 ## 目录
 
 ```
