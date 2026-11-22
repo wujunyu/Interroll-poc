@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "title": "英特诺产线遥测 · PoC",
+    "subtitle": "36 台驱动 @10Hz → 边缘库 → 看板，以及四个可复现的数字",
+    "author": "vincent",
+    "date": "2026.11.22",
+    "reading_time": "约 6 分钟",
+    "tags": ["PoC", "MQTT", "TimescaleDB", "React"],
+    "lang": null
+  },
+  "upgrades": []
+}

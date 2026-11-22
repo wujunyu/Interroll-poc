@@ -27,3 +27,7 @@ dist/
 **/obj/
 **/bin/
 *.user
+
+# 归藏渲染产物（可由 docs/design/readme-annotations.json 重新生成）
+docs/readme-preview.html
+docs/design/exports/readme-preview-top.png
