@@ -1,0 +1,110 @@
+<mxfile host="app.diagrams.net" modified="2026-11-23T00:00:00.000Z" agent="dsh" version="24.7.17" type="device">
+  <diagram id="dfd-wms-task" name="DFD · WMS 任务与命令">
+    <mxGraphModel dx="1200" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1300" pageHeight="600" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t" value="DFD Level-2 · WMS 任务与命令（待补的对接层）" style="text;html=1;fontSize=20;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="8" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wms" value="WMS&lt;br&gt;&lt;small&gt;仓储管理 · 客户系统&lt;/small&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1" value="P1 WMS 任务接入&lt;br&gt;&lt;small&gt;task_id 幂等 · tasks 表&lt;/small&gt;" style="ellipse;whiteSpace=wrap;html=1;fontSize=13;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="60" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2" value="P2 命令编排&lt;br&gt;&lt;small&gt;command/ack · 状态机&lt;/small&gt;" style="ellipse;whiteSpace=wrap;html=1;fontSize=13;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="60" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="brk" value="MQTT Broker&lt;br&gt;&lt;small&gt;command / ack&lt;/small&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="900" y="70" width="160" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dev" value="MultiControl / Drive&lt;br&gt;&lt;small&gt;执行机构&lt;/small&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="70" width="160" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d1" value="D1 tasks&lt;br&gt;&lt;small&gt;task_id PK · state&lt;/small&gt;" style="shape=partialRectangle;left=0;right=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="230" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="d2" value="D2 commands&lt;br&gt;&lt;small&gt;cmd_id PK · task_id · state&lt;/small&gt;" style="shape=partialRectangle;left=0;right=0;whiteSpace=wrap;html=1;fontSize=13;fillColor=#fff2cc;strokeColor=#d6b656;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="230" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_poc" value="PoC 遥测路径&lt;br&gt;&lt;small&gt;已实现，见 DFD-1&lt;/small&gt;" style="shape=note;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=middle;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="900" y="230" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_state" value="状态机&lt;br&gt;&lt;small&gt;accepted → dispatched → executing → done/failed&lt;/small&gt;" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=middle;spacingLeft=8;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="300" y="370" width="270" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_query" value="P3 任务查询 / 看板&lt;br&gt;&lt;small&gt;读 D1/D2；规划中，本图省略节点&lt;/small&gt;" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=middle;spacingLeft=8;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="600" y="370" width="270" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_retry" value="重试&lt;br&gt;&lt;small&gt;task_id 幂等 · ack 超时重发&lt;/small&gt;" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=middle;spacingLeft=8;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="920" y="370" width="260" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_scope" value="P1 / P2 / D1 / D2 是待补的 WMS 对接层；PoC 目前只有遥测、看板、告警、诊断（DFD-1）" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=middle;spacingLeft=8;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="470" width="1080" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_task" value="task(task_id, SKU, route)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=1;exitY=0.3;entryX=0;entryY=0.3;" edge="1" parent="1" source="wms" target="p1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_accepted" value="accepted / completed" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;dashed=1;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0;exitY=0.7;entryX=1;entryY=0.7;" edge="1" parent="1" source="p1" target="wms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_task_rec" value="task record" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0.4;exitY=1;entryX=0.4;entryY=0;" edge="1" parent="1" source="p1" target="d1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_dispatch" value="dispatch(task_id)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=1;exitY=0.4;entryX=0;entryY=0.4;" edge="1" parent="1" source="p1" target="p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_result" value="result(task_id)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;dashed=1;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0;exitY=0.75;entryX=1;entryY=0.75;" edge="1" parent="1" source="p2" target="p1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_cmd_rec" value="command record" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="p2" target="d2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_cmd" value="command(MQTT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=1;exitY=0.3;entryX=0;entryY=0.3;" edge="1" parent="1" source="p2" target="brk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_ack" value="ack/status" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;dashed=1;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0;exitY=0.7;entryX=1;entryY=0.7;" edge="1" parent="1" source="brk" target="p2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_update" value="update state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;dashed=1;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0;exitY=0.85;entryX=1;entryY=0.3;" edge="1" parent="1" source="p2" target="d1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_dev_cmd" value="command" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=1;exitY=0.3;entryX=0;entryY=0.3;" edge="1" parent="1" source="brk" target="dev">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f_dev_ack" value="ack/status" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;strokeColor=#666666;dashed=1;labelBackgroundColor=default;defaultLabelBackgroundColor=page;verticalAlign=bottom;exitX=0;exitY=0.7;entryX=1;entryY=0.7;" edge="1" parent="1" source="dev" target="brk">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lg" value="椭圆=处理　矩形=外部实体　开口矩形=数据存储　实线=同步　虚线=异步/未实现　黄=规划中/WMS 对接层　绿=PoC 已实现（见 DFD-1）" style="text;html=1;fontSize=12;fontColor=#666666;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="550" width="1200" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

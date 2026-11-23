@@ -1,0 +1,94 @@
+<mxfile host="app.diagrams.net" modified="2026-11-23T00:00:00.000Z" agent="dsh" version="24.7.17" type="device">
+  <diagram id="wms-task-seq" name="WMS 任务对接时序">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="800" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="WMS 任务对接时序：WMS → MCP PLAY → MultiControl → Drive → PoC" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1120" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wms" value="WMS&lt;br&gt;&lt;small&gt;仓储管理&lt;/small&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;size=48;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="80" width="140" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mcp" value="MCP PLAY&lt;br&gt;&lt;small&gt;集成层&lt;/small&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;size=48;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="220" y="80" width="140" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mc" value="MultiControl&lt;br&gt;&lt;small&gt;四区控制&lt;/small&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;size=48;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="400" y="80" width="140" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="drv" value="RollerDrive&lt;br&gt;&lt;small&gt;输送线&lt;/small&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;size=48;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="580" y="80" width="140" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="poc" value="PoC 数据面&lt;br&gt;&lt;small&gt;ingest/db/api&lt;/small&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;size=48;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="760" y="80" width="140" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ui" value="看板&lt;br&gt;&lt;small&gt;React / WS&lt;/small&gt;" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;size=48;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="940" y="80" width="140" height="560" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m1" value="1. task（MQTT/JSON）" style="html=1;endArrow=block;endFill=1;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.125;entryX=0.5;entryY=0.125;" edge="1" parent="1" source="wms" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m2" value="2. accepted（task_id）" style="html=1;dashed=1;endArrow=open;endFill=0;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.2142857;entryX=0.5;entryY=0.2142857;" edge="1" parent="1" source="mcp" target="wms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m3" value="3. command（route / divert）" style="html=1;endArrow=block;endFill=1;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.3035714;entryX=0.5;entryY=0.3035714;" edge="1" parent="1" source="mcp" target="mc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m4" value="4. fieldbus" style="html=1;endArrow=block;endFill=1;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.3928571;entryX=0.5;entryY=0.3928571;" edge="1" parent="1" source="mc" target="drv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m5" value="5. status" style="html=1;dashed=1;endArrow=open;endFill=0;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.4821429;entryX=0.5;entryY=0.4821429;" edge="1" parent="1" source="drv" target="mc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m6" value="6. telemetry / done" style="html=1;dashed=1;endArrow=open;endFill=0;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.5714286;entryX=0.5;entryY=0.5714286;" edge="1" parent="1" source="mc" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m7" value="7. completed（task_id）" style="html=1;dashed=1;endArrow=open;endFill=0;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.6607143;entryX=0.5;entryY=0.6607143;" edge="1" parent="1" source="mcp" target="wms">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m8" value="8. telemetry（MQTT line/{zone}/drive, QoS1）" style="html=1;dashed=1;endArrow=open;endFill=0;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.75;entryX=0.5;entryY=0.75;" edge="1" parent="1" source="mc" target="poc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="m9" value="9. WS 10fps" style="html=1;dashed=1;endArrow=open;endFill=0;rounded=0;fontSize=12;labelBackgroundColor=#ffffff;verticalAlign=bottom;exitX=0.5;exitY=0.8392857;entryX=0.5;entryY=0.8392857;" edge="1" parent="1" source="poc" target="ui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_wal" value="WAL → TimescaleDB" style="shape=note;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=center;verticalAlign=middle;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="770" y="570" width="160" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_alt" value="else 异常：rejected / exception" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=center;verticalAlign=middle;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="220" y="608" width="300" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_gap" value="PoC 未实现：WMS task/ack、命令通道、PLC/现场总线、鉴权" style="shape=note;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=middle;spacingLeft=8;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="40" y="660" width="680" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_poc" value="PoC 已实现：遥测入库 / 看板 / 告警 / 诊断；simulator 近似控制器" style="shape=note;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=middle;spacingLeft=8;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="760" y="660" width="400" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="实线：请求/命令　虚线：响应/遥测/异步　橙：外部/设备　蓝：服务/应用　绿：PoC 已实现" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="40" y="730" width="1120" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

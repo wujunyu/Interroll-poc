@@ -1,0 +1,110 @@
+<mxfile host="app.diagrams.net" modified="2026-11-23T00:00:00.000Z" agent="dsh" version="24.7.17" type="device">
+  <diagram id="poc-wms-map" name="PoC 与 WMS 对应">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1160" pageHeight="760" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="英特诺 PoC 与 WMS / MCP PLAY / MultiControl 的对应关系" style="text;html=1;fontSize=20;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="1080" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="real" value="真实链路（不在 PoC 范围）" style="swimlane;startSize=26;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=14;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="20" y="60" width="280" height="600" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wms" value="WMS 仓储管理&lt;br&gt;&lt;small&gt;客户系统 · 订单/库存/任务&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="real">
+          <mxGeometry x="30" y="40" width="220" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mcp" value="MCP PLAY / 集成层&lt;br&gt;&lt;small&gt;MQTT 接 WMS · 规划/调试/运行&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="real">
+          <mxGeometry x="30" y="170" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mc" value="MultiControl&lt;br&gt;&lt;small&gt;四区控制 · 2ms 现场总线&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="real">
+          <mxGeometry x="30" y="310" width="220" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="drive" value="RollerDrive / 输送线&lt;br&gt;&lt;small&gt;6 区 × 6 驱动（模拟）&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="real">
+          <mxGeometry x="30" y="450" width="220" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_wms_mcp" value="task ⇄ ack" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=block;endArrow=block;fontSize=12;labelBackgroundColor=default;" edge="1" parent="real" source="wms" target="mcp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_mcp_mc" value="command ⇄ telemetry" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=block;endArrow=block;fontSize=12;labelBackgroundColor=default;" edge="1" parent="real" source="mcp" target="mc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_mc_drive" value="fieldbus" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="real" source="mc" target="drive">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="poc" value="PoC 数据面（已实现）" style="swimlane;startSize=26;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontStyle=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="340" y="60" width="800" height="600" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_map" value="&lt;b&gt;对应关系&lt;/b&gt;&lt;br&gt;WMS → 任务（不在 PoC）&lt;br&gt;MCP PLAY → 集成/控制（不在 PoC）&lt;br&gt;MultiControl/Drive → simulator 近似&lt;br&gt;ingest / db / api / web → PoC 数据面" style="shape=note;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=13;" vertex="1" parent="poc">
+          <mxGeometry x="40" y="30" width="720" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="note_gap" value="&lt;b&gt;PoC 已有&lt;/b&gt; MQTT ingest · WAL · 幂等键 · 断链补传 · WS 看板 · diag&lt;br&gt;&lt;b&gt;缺&lt;/b&gt; WMS task 模型 · 命令通道 · PLC/现场总线 · 鉴权" style="shape=note;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=13;" vertex="1" parent="poc">
+          <mxGeometry x="40" y="150" width="720" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="web" value="web&lt;br&gt;&lt;small&gt;React 看板&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="poc">
+          <mxGeometry x="470" y="300" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api" value="api&lt;br&gt;&lt;small&gt;REST + WS&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="poc">
+          <mxGeometry x="680" y="300" width="110" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="simulator" value="simulator&lt;br&gt;&lt;small&gt;扮演控制器/驱动遥测&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="poc">
+          <mxGeometry x="40" y="450" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="mqtt" value="mosquitto&lt;br&gt;&lt;small&gt;MQTT 总线 · QoS1&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="poc">
+          <mxGeometry x="260" y="450" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ingest" value="ingest&lt;br&gt;&lt;small&gt;WAL + 批量 200/1s&lt;/small&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="poc">
+          <mxGeometry x="470" y="450" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="db" value="TimescaleDB&lt;br&gt;&lt;small&gt;hypertable&lt;/small&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=16;align=center;verticalAlign=middle;" vertex="1" parent="poc">
+          <mxGeometry x="680" y="450" width="110" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_sim_mqtt" value="QoS1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="poc" source="simulator" target="mqtt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_mqtt_ingest" value="QoS1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="poc" source="mqtt" target="ingest">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_ingest_db" value="batch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="poc" source="ingest" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_db_api" value="REST" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="poc" source="db" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_api_web" value="WS 10fps" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="poc" source="api" target="web">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_drive_sim" value="遥测（模拟）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;fontSize=12;labelBackgroundColor=default;" edge="1" parent="1" source="drive" target="simulator">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="实线：已实现　虚线：模拟/未实现　虚线框：不在 PoC　橙：外部/设备　蓝：服务/应用　绿：数据　黄：MQTT" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="20" y="690" width="1120" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
